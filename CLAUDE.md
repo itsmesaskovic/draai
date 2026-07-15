@@ -2,7 +2,7 @@
 
 DRAAI plays local music on Sonos / IKEA Symfonisk speakers. One
 dependency-free Python engine + one self-contained HTML interface.
-Currently at v1.1.0, live at github.com/itsmesaskovic/draai.
+Currently at v1.2.0, live at github.com/itsmesaskovic/draai.
 
 ## Hard rules (do not break these)
 

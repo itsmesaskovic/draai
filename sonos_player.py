@@ -37,7 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.etree import ElementTree
 
 APP_NAME = "DRAAI"
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 PREFERRED_PORT = 8765
 AUDIO_EXTS = {
     ".mp3": "audio/mpeg",
