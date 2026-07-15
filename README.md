@@ -29,6 +29,11 @@ full-screen view).
 
 ![The vinyl deck view](docs/vinyl.png)
 
+![Light theme](docs/light.png)
+
+There's a light theme too — it follows your macOS setting and keeps the
+album-driven colors.
+
 ## Why this exists
 
 This project was born on an ordinary evening with a folder of mp3s, an
@@ -139,6 +144,13 @@ fix it before moving on.
 ## Features
 
 - Finds Sonos / Symfonisk speakers automatically (or add one by IP address)
+- A queue you can actually manage: drag to reorder, **Play next**, add whole
+  albums or folders, multi-select songs (Cmd/Shift-click, or the Select button)
+- Playlists saved as plain `.m3u` files in your music folder — no database,
+  no cloud, readable by any player
+- Light & dark theme — follows macOS automatically, one click to override
+- Songs view can group by folder or artist, sort by title/artist/date added;
+  folder headers show the full path on hover and open in Finder
 - Long sets resume where you left off, even after restarting
 - Vinyl deck view: a spinning record with your artwork as the label
 - Media keys: play/pause from your keyboard, artwork in macOS now-playing
@@ -183,7 +195,9 @@ Undo anytime with `--uninstall-autostart`.
 open-source media downloader. This project does not include, bundle, or
 download it — but if you have installed it yourself
 (`brew install yt-dlp ffmpeg`), the app shows an import box: paste a link,
-and yt-dlp saves the audio into your music folder.
+and yt-dlp saves the audio — with title, artist and cover art embedded —
+into an `Imported` subfolder of your first library folder
+(e.g. `~/Music/Imported/`). The library rescans automatically.
 
 **Use this only for content you have the right to download**: your own
 uploads, Creative Commons-licensed material, public-domain recordings, and
