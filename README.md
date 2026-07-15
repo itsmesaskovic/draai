@@ -29,6 +29,40 @@ full-screen view).
 
 ![The vinyl deck view](docs/vinyl.png)
 
+## Why this exists
+
+This project was born on an ordinary evening with a folder of mp3s, an
+IKEA Symfonisk speaker, and the reasonable assumption that connecting the
+two would be simple. It wasn't. Every existing route turned out to be a
+workaround wearing a product's clothes:
+
+**The official way.** The Sonos app can play a "Music Library" — if you
+set up SMB file sharing on your Mac, get the permissions right, let it
+index your collection, and re-index when it changes. A network-drive
+ritual from another era, for playing a file that's sitting right there.
+
+**The App Store apps.** A parade of third-party players that are broken,
+abandoned, paywalled behind subscriptions, or quietly upload your music to
+their cloud so they can stream it back to you. None of them just played
+the folder.
+
+**The mirroring apps.** These capture your Mac's entire audio output and
+re-stream it with a delay — every notification ding included, seeking
+broken, quality reduced. A screwdriver used as a hammer.
+
+**The media servers.** Plex, Jellyfin, Logitech Media Server — genuinely
+good software that answers a different question. Standing up a media
+server with libraries, users, and transcoders to play mp3s on the speaker
+three meters away is a lot of ceremony for a small wish.
+
+The absurd part: Sonos speakers natively do exactly what's needed. You
+hand them the address of an audio file on your network, and they play it
+— that capability has been sitting in every unit all along. DRAAI is just
+the missing polite conversation with your speaker: a small engine that
+serves your files and asks the speaker to play them. No accounts, no
+indexing, no cloud, no subscription. The way it arguably should have
+worked out of the box.
+
 ## Quick start
 
 1. Click the green **Code** button → **Download ZIP**, and unpack it
@@ -67,6 +101,40 @@ Two things may happen on first run, both normal and both one-time:
 
 Keep the Terminal window open while music plays (your Mac is the music
 server). Press Ctrl+C in that window to quit.
+
+## Not technical? Let your AI walk you through it
+
+You don't need a GitHub account for any of this — the green **Code** button
+→ **Download ZIP** works for everyone. And if the steps above feel foreign,
+copy the block below and paste it into your AI assistant (Claude, ChatGPT,
+Copilot — any of them). It will guide you through setup one step at a time:
+
+```text
+I want to set up DRAAI, a free open-source app that plays my own music
+files on my Sonos / IKEA Symfonisk speakers, from this page:
+https://github.com/itsmesaskovic/draai
+
+I'm on a Mac and not very technical. Please walk me through it ONE step
+at a time, waiting for me to confirm each step worked before the next.
+
+The steps: (1) download the ZIP from the GitHub page (green "Code"
+button, no account needed) and unzip it; (2) open Terminal, cd into the
+unzipped folder (usually ~/Downloads/draai-main) and run:
+python3 sonos_player.py
+(3) if macOS offers to install "command line developer tools", I should
+accept and wait, then run the command again; (4) if macOS asks whether
+Python may accept incoming network connections, I click Allow; (5) a
+control panel opens in my browser — help me pick my speaker under Rooms
+and add my music folder under Library; (6) if no speakers appear, check
+I'm on the same Wi-Fi as the speakers, press Rescan, or add the speaker
+by its IP address (shown in the Sonos app under Settings > System >
+About My System); (7) only if I want extras: "brew install ffmpeg"
+enables the waveform visuals, and "python3 sonos_player.py
+--install-autostart" makes it start automatically at login.
+
+If anything fails, ask me to paste the exact Terminal output and help me
+fix it before moving on.
+```
 
 ## Features
 
