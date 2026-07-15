@@ -93,15 +93,31 @@ class SoapMock:
             esc = ZONE_XML.replace("<", "&lt;").replace(">", "&gt;")
             return "<ZoneGroupState>%s</ZoneGroupState>" % esc
         if action == "AddURIToQueue":
-            self.queue.append(args["EnqueuedURI"])
+            uri = args["EnqueuedURI"]
+            pos = int(args.get("DesiredFirstTrackNumberEnqueued", 0))
+            if int(args.get("EnqueueAsNext", 0)) == 1 and pos > 0:
+                self.queue.insert(pos - 1, uri)
+            else:
+                self.queue.append(uri)
+            return "<ok/>"
+        if action == "ReorderTracksInQueue":
+            # real-Sonos semantics: InsertBefore counted pre-removal
+            s = int(args["StartingIndex"]); n = int(args["NumberOfTracks"])
+            ib = int(args["InsertBefore"])
+            moved = self.queue[s - 1:s - 1 + n]
+            del self.queue[s - 1:s - 1 + n]
+            adj = ib - n if ib > s else ib
+            for i, m in enumerate(moved):
+                self.queue.insert(adj - 1 + i, m)
             return "<ok/>"
         if action == "RemoveAllTracksFromQueue":
             self.queue = []
             return "<ok/>"
         if action == "Browse":
             items = "".join(
-                '<item id="Q:0/%d"><dc:title>t%d</dc:title></item>' % (i + 1, i + 1)
-                for i in range(len(self.queue)))
+                '<item id="Q:0/%d"><dc:title>t%d</dc:title><res>%s</res></item>'
+                % (i + 1, i + 1, u)
+                for i, u in enumerate(self.queue))
             esc = items.replace("<", "&lt;").replace(">", "&gt;")
             return ("<Result>%s</Result><TotalMatches>%d</TotalMatches>"
                     % (esc, len(self.queue)))
@@ -132,6 +148,7 @@ class DraaiTests(unittest.TestCase):
         self.soap = SoapMock()
         sp.soap_call = self.soap
         sp.ssdp_discover = lambda timeout=3.0: {"192.168.1.50"}
+        sp.cast_discover = lambda timeout=4.0: []
         sp.config["folders"] = [self.tmp]
         sp.config["manual_ips"] = []
 
@@ -265,12 +282,238 @@ class DraaiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
+    # -- v1.1: queue management ---------------------------------------------------------
+
+    def _seed_queue(self, titles):
+        for t in titles:
+            make_mp3(os.path.join(self.tmp, t + ".mp3"), t)
+        sp.scan_all()
+        ids = {t["title"]: t["id"] for t in sp.tracks}
+        sp.play_tracks({"uuid": "RINCON_A", "ip": "192.168.1.50"},
+                       [ids[t] for t in titles])
+        import time
+        time.sleep(0.3)   # background enqueue of the tail
+        return ids
+
+    def _queue_ids(self):
+        items, _ = sp.browse_queue({"uuid": "RINCON_A", "ip": "192.168.1.50"})
+        return [it["id"] for it in items]
+
+    def test_queue_move_semantics(self):
+        ids = self._seed_queue(["A", "B", "C", "D", "E"])
+        spk = {"uuid": "RINCON_A", "ip": "192.168.1.50"}
+        sp.queue_move(spk, 5, 2)   # move up
+        self.assertEqual(self._queue_ids(),
+                         [ids[x] for x in ["A", "E", "B", "C", "D"]])
+        sp.queue_move(spk, 2, 4)   # move down
+        self.assertEqual(self._queue_ids(),
+                         [ids[x] for x in ["A", "B", "C", "E", "D"]])
+
+    def test_enqueue_play_next(self):
+        ids = self._seed_queue(["A", "B", "C"])
+        spk = {"uuid": "RINCON_A", "ip": "192.168.1.50"}
+        # mock reports track 1 as current -> block lands at positions 2..3
+        sp.enqueue_tracks(spk, [ids["C"], ids["B"]], play_next=True)
+        self.assertEqual(self._queue_ids(),
+                         [ids[x] for x in ["A", "C", "B", "B", "C"]])
+
+    def test_playlist_roundtrip(self):
+        ids = self._seed_queue(["A", "B"])
+        spk = {"uuid": "RINCON_A", "ip": "192.168.1.50"}
+        n = sp.save_playlist(spk, "Mix/1")
+        self.assertEqual(n, 2)
+        self.assertEqual(sp.list_playlists(), [{"name": "Mix-1", "count": 2}])
+        got, total = sp.load_playlist("Mix-1")
+        self.assertEqual((len(got), total), (2, 2))
+        sp.delete_playlist("Mix-1")
+        self.assertEqual(sp.list_playlists(), [])
+
+    def test_reveal_guard(self):
+        make_mp3(os.path.join(self.tmp, "x.mp3"), "X")
+        sp.scan_all()
+        with sp.state_lock:
+            sp.tracks_by_id["f" * 16] = {"id": "f" * 16, "path": "/etc/passwd"}
+        with self.assertRaises(RuntimeError):
+            sp.reveal_in_finder("f" * 16)
+        with self.assertRaises(RuntimeError):
+            sp.reveal_in_finder("0" * 16)
+
+    def test_added_timestamp(self):
+        make_mp3(os.path.join(self.tmp, "y.mp3"), "Y")
+        sp.scan_all()
+        self.assertTrue(all(t.get("added", 0) > 0 for t in sp.tracks))
+
     # -- helpers -----------------------------------------------------------------------
 
     def test_time_helpers(self):
         self.assertEqual(sp.sec_to_hms(3725), "1:02:05")
         self.assertEqual(sp.hms_to_sec("1:02:05"), 3725)
         self.assertEqual(sp.hms_to_sec("bogus"), 0)
+
+
+
+    def test_cast_frame_roundtrip(self):
+        f = sp.cast_frame("urn:x-cast:com.google.cast.receiver",
+                          {"type": "LAUNCH", "appId": "CC1AD845"}, "sender-0", "receiver-0")
+        n = struct.unpack(">I", f[:4])[0]
+        self.assertEqual(n, len(f) - 4)               # 4-byte big-endian length prefix
+        d = sp.cast_parse_frame(f[4:])
+        self.assertEqual(d["namespace"], "urn:x-cast:com.google.cast.receiver")
+        self.assertEqual(d["source"], "sender-0")
+        self.assertEqual(d["dest"], "receiver-0")
+        self.assertEqual(json.loads(d["payload"]), {"type": "LAUNCH", "appId": "CC1AD845"})
+
+    def test_mdns_name_compression(self):
+        # "_googlecast._tcp.local" then a compression pointer back to offset 2
+        base = sp._dns_encode_name("_googlecast._tcp.local")
+        blob = b"\x00\x00" + base + b"\xc0\x02"        # pointer -> offset 2
+        name, i = sp._dns_parse_name(blob, 2)
+        self.assertEqual(name, "_googlecast._tcp.local")
+        # the pointer that follows resolves to the same name
+        name2, _ = sp._dns_parse_name(blob, 2 + len(base))
+        self.assertEqual(name2, "_googlecast._tcp.local")
+
+    def test_mdns_query_packet_is_ptr_question(self):
+        pkt = sp._mdns_query_packet()
+        qd = struct.unpack(">H", pkt[4:6])[0]          # qdcount
+        self.assertEqual(qd, 1)
+        self.assertIn(b"_googlecast", pkt)
+        # QTYPE=PTR(12) QCLASS=IN(1) at the end
+        qtype, qclass = struct.unpack(">HH", pkt[-4:])
+        self.assertEqual(qtype, 12)
+        self.assertEqual(qclass, 1)
+
+    def test_castsession_handles_status_ping_finish(self):
+        sent = []
+        class MockSock:
+            def sendall(self, b): sent.append(b)
+            def recv(self, n): raise AssertionError("recv not used in this test")
+            def close(self): pass
+        sess = sp.CastSession("1.2.3.4", sock_factory=lambda ip, port: MockSock(), autostart=False)
+        # _connect() already sent CONNECT + PING
+        types0 = [json.loads(sp.cast_parse_frame(b[4:])["payload"]).get("type") for b in sent]
+        self.assertIn("CONNECT", types0)
+        # RECEIVER_STATUS -> transportId + volume captured
+        rs = {"type": "RECEIVER_STATUS", "status": {
+            "applications": [{"appId": "CC1AD845", "transportId": "tr-9", "sessionId": "s-1"}],
+            "volume": {"level": 0.5}}}
+        sess._handle({"namespace": sp.NS_RECV, "payload": json.dumps(rs)})
+        self.assertEqual(sess.transport, "tr-9")
+        self.assertEqual(sess.status["volume"], 50)
+        # MEDIA_STATUS -> playerState + position
+        ms = {"type": "MEDIA_STATUS", "status": [{"playerState": "PLAYING",
+              "currentTime": 12.0, "media": {"duration": 200.0}}]}
+        sess._handle({"namespace": sp.NS_MED, "payload": json.dumps(ms)})
+        self.assertEqual(sess.status["state"], "PLAYING")
+        self.assertEqual(sess.status["position"], sp.sec_to_hms(12.0))
+        # PING -> PONG
+        sent.clear()
+        sess._handle({"namespace": sp.NS_HB, "payload": json.dumps({"type": "PING"})})
+        pong = [json.loads(sp.cast_parse_frame(b[4:])["payload"]).get("type") for b in sent]
+        self.assertIn("PONG", pong)
+        # FINISHED -> advance callback fires
+        fired = []
+        sess._advance_cb = lambda: fired.append(1)
+        sess._handle({"namespace": sp.NS_MED, "payload": json.dumps(
+            {"type": "MEDIA_STATUS", "status": [{"playerState": "IDLE", "idleReason": "FINISHED"}]})})
+        self.assertEqual(fired, [1])
+
+    def test_backend_field_and_merge(self):
+        orig = (sp.ssdp_discover, sp.get_zone_groups, sp.cast_discover)
+        try:
+            sp.ssdp_discover = lambda: {"10.0.0.5"}
+            sp.get_zone_groups = lambda ip: [{"uuid": "RINCON_x", "name": "Living",
+                "ip": "10.0.0.5", "members": [{"uuid": "RINCON_x", "name": "Living", "ip": "10.0.0.5"}]}]
+            sp.cast_discover = lambda timeout=4.0: [{"uuid": "CAST_abc", "name": "Zolder",
+                "ip": "10.0.0.9", "port": 8009, "backend": "cast", "is_group": False,
+                "members": [{"uuid": "CAST_abc", "name": "Zolder", "ip": "10.0.0.9"}]}]
+            merged, err = sp.refresh_speakers()
+            self.assertIsNone(err)
+            by = {s["uuid"]: s for s in merged}
+            self.assertEqual(by["RINCON_x"]["backend"], "sonos")
+            self.assertEqual(by["CAST_abc"]["backend"], "cast")
+            self.assertEqual(sp.speaker_by_uuid("CAST_abc")["backend"], "cast")
+        finally:
+            sp.ssdp_discover, sp.get_zone_groups, sp.cast_discover = orig
+
+    def test_no_devices_message(self):
+        orig = (sp.ssdp_discover, sp.cast_discover)
+        try:
+            sp.ssdp_discover = lambda: set()
+            sp.cast_discover = lambda timeout=4.0: []
+            # config manual_ips may add entries; ensure empty for this assertion
+            mi = sp.config.get("manual_ips")
+            sp.config["manual_ips"] = []
+            merged, err = sp.refresh_speakers()
+            self.assertEqual(merged, [])
+            self.assertIn("No speakers found", err)
+        finally:
+            sp.ssdp_discover, sp.cast_discover = orig
+            sp.config["manual_ips"] = mi if mi is not None else []
+
+    def test_cast_guard_eq_and_grouping_raise(self):
+        cast_spk = {"backend": "cast", "uuid": "CAST_x", "ip": "1.2.3.4",
+                    "name": "Zolder", "members": [{"uuid": "CAST_x", "name": "Zolder", "ip": "1.2.3.4"}]}
+        with self.assertRaises(RuntimeError):
+            sp.get_eq(cast_spk)
+        with self.assertRaises(RuntimeError):
+            sp.set_eq(cast_spk, bass=1)
+        # group_join resolves member by uuid -> make it findable as cast
+        orig = sp.speaker_by_uuid
+        try:
+            sp.speaker_by_uuid = lambda u: cast_spk if u == "CAST_x" else None
+            with self.assertRaises(RuntimeError):
+                sp.group_join("CAST_x", "CAST_y")
+            with self.assertRaises(RuntimeError):
+                sp.group_leave("CAST_x")
+        finally:
+            sp.speaker_by_uuid = orig
+
+    def test_cast_play_and_queue(self):
+        sent = []
+        class MockSock:
+            def sendall(self, b): sent.append(b)
+            def recv(self, n): raise AssertionError("no recv")
+            def close(self): pass
+        ip = "9.9.9.9"
+        sess = sp.CastSession(ip, sock_factory=lambda i, p: MockSock(), autostart=False)
+        sess.transport = "tr-1"; sess._running = True
+        sp.cast_sessions[ip] = sess
+        a, b = "a" * 16, "b" * 16
+        sp.tracks_by_id[a] = {"id": a, "title": "TA", "artist": "X", "ext": ".flac", "path": "/a.flac"}
+        sp.tracks_by_id[b] = {"id": b, "title": "TB", "artist": "X", "ext": ".mp3", "path": "/b.mp3"}
+        spk = {"ip": ip, "port": 8009, "backend": "cast", "uuid": "CAST_x"}
+        try:
+            sent.clear()
+            sp.cast_play_tracks(spk, [a, b])
+            self.assertEqual(sp.cast_queues[ip]["ids"], [a, b])
+            self.assertEqual(sp.cast_queues[ip]["idx"], 0)
+            load = [json.loads(sp.cast_parse_frame(x[4:])["payload"]) for x in sent]
+            load = [p for p in load if p.get("type") == "LOAD"][0]
+            self.assertEqual(load["media"]["contentType"], "audio/flac")
+            self.assertIn("/media/" + a + "/", load["media"]["contentId"])
+            # queue view shape
+            items, total = sp.cast_browse_queue(spk)
+            self.assertEqual(total, 2)
+            self.assertEqual(items[0], {"no": 1, "id": a, "title": "TA"})
+            # auto-advance loads b
+            sent.clear()
+            sp._cast_advance(ip)
+            self.assertEqual(sp.cast_queues[ip]["idx"], 1)
+            load2 = [json.loads(sp.cast_parse_frame(x[4:])["payload"]) for x in sent]
+            load2 = [p for p in load2 if p.get("type") == "LOAD"][0]
+            self.assertEqual(load2["media"]["contentType"], "audio/mpeg")
+            # status shape
+            stt = sp.cast_get_status(spk)
+            self.assertEqual(stt["track_no"], 2)
+            self.assertEqual(stt["track_id"], b)
+            # AIFF rejected
+            sp.tracks_by_id["c" * 16] = {"id": "c" * 16, "title": "C", "ext": ".aiff", "path": "/c.aiff"}
+            with self.assertRaises(RuntimeError):
+                sp.cast_play_tracks(spk, ["c" * 16])
+        finally:
+            sp.cast_sessions.pop(ip, None); sp.cast_queues.pop(ip, None)
+            for k in (a, b, "c" * 16): sp.tracks_by_id.pop(k, None)
 
 
 if __name__ == "__main__":
