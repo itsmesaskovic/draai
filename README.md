@@ -34,8 +34,16 @@ full-screen view).
 1. Click the green **Code** button → **Download ZIP**, and unpack it
    (or `git clone https://github.com/itsmesaskovic/draai.git`).
 2. Open **Terminal** (press Cmd+Space, type "Terminal", press Enter).
-3. Type `python3 `, **with a space after it**, then drag `sonos_player.py`
-   from the unpacked folder into the Terminal window, and press Enter.
+3. Go into the folder and start it:
+
+   ```
+   cd ~/Downloads/draai-main   # or wherever you unpacked it
+   python3 sonos_player.py
+   ```
+
+   Not sure about the path? Type `python3 `, **with a space after it**, drag
+   `sonos_player.py` from the folder into the Terminal window, press Enter —
+   same thing.
 
 ### What happens next
 
