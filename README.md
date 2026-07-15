@@ -14,16 +14,41 @@ at whatever quality your files are (320 kbps mp3s, lossless FLAC, all of it).
 
 No Sonos account. No internet needed. Nothing leaves your home network.
 
+## What it looks like
+
+*(Screenshots show a demo library with generated artwork.)*
+
+![The library, themed by the artwork of whatever is playing](docs/library.png)
+
+The interface takes its colors from the cover art of the playing track —
+every album gives the whole app a different mood. Below: the full-screen
+now-playing view, and the vinyl deck (click the record icon, top of the
+full-screen view).
+
+![Full-screen now playing](docs/nowplaying.png)
+
+![The vinyl deck view](docs/vinyl.png)
+
 ## Quick start
 
-1. Download `sonos_player.py` and `player_ui.html` from this repository
-   (green **Code** button → Download ZIP), and keep them in the same folder.
+1. Click the green **Code** button → **Download ZIP**, and unpack it
+   (or `git clone https://github.com/itsmesaskovic/draai.git`).
 2. Open **Terminal** (press Cmd+Space, type "Terminal", press Enter).
-3. Type `python3 `, **with a space after it**, then drag the downloaded file
-   into the Terminal window, and press Enter.
+3. Type `python3 `, **with a space after it**, then drag `sonos_player.py`
+   from the unpacked folder into the Terminal window, and press Enter.
 
-A control panel opens in your browser. Pick a speaker, add your music
-folder(s) with the folder picker, click a song. That's it.
+### What happens next
+
+- The Terminal prints a short banner and keeps running — that's the engine;
+  leave it open. Your browser opens the control panel at
+  http://localhost:8765.
+- Your speakers appear under **Rooms** within a few seconds (first time on a
+  new network can take a moment — there's a Rescan button).
+- Under **Library**, click **＋ Add folder…** and pick your music folder.
+  Your songs appear instantly; albums with embedded artwork get covers.
+- Click a song. It plays on the speaker, and the whole interface takes on
+  the colors of the album art. Click the ⛶ icon in the player bar for the
+  full-screen view; the record icon at the top switches to the vinyl deck.
 
 Two things may happen on first run, both normal and both one-time:
 
