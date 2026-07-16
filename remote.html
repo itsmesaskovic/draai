@@ -76,7 +76,7 @@ async function poll(){
       S.status = status;
       if(typeof status.volume==="number" && document.activeElement!==$("#vol")) $("#vol").value=status.volume;
       renderTransport();   // keep play/pause icon current on every tab, not just Now/Queue
-      if(S.tab==="now") renderNow();
+      if(S.tab==="now") updateNow();   // in-place patch — never rebuild #view here (would kill mid-drag seek + reload art)
       if(S.tab==="queue") await refreshQueue();
     }
     online(true);
@@ -102,31 +102,49 @@ function renderTransport(){
   $("#tPlay").onclick=()=>cmd(playing?"pause":"resume");
   $("#tShuf").onclick=()=>cmd("shuffle", true);
 }
-function pickRoomView(){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Pick a room to start.</div>`; }
+let _npBuilt=false;   // has the Now DOM been built once? (rebuilt on tab entry/room change, patched in place on poll)
+let _npArtId=null;    // track_id whose art is currently loaded — only touch the <img> when this changes
+function pickRoomView(){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Pick a room to start.</div>`; _npBuilt=false; }
 function renderNow(){
   renderTransport();
   if(!S.speaker){ pickRoomView(); return; }
-  const s=S.status||{};
-  const t=S.trackMap[s.track_id]||{};
-  const artist=t.artist||"";
-  const art=s.track_id?`<img src="/api/art?id=${enc(s.track_id)}" alt="" style="width:70vw;max-width:320px;aspect-ratio:1;border-radius:16px;object-fit:cover;background:var(--panel)">`:"";
   $("#view").innerHTML=`
     <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 6px">
-      ${art}
+      <img id="npArt" alt="" style="width:70vw;max-width:320px;aspect-ratio:1;border-radius:16px;object-fit:cover;background:var(--panel);display:none">
       <div style="text-align:center">
-        <div style="font-size:19px;font-weight:600">${esc(s.title||"Nothing playing")}</div>
-        <div style="color:var(--dim)">${esc(artist)}</div>
+        <div id="npTitle" style="font-size:19px;font-weight:600"></div>
+        <div id="npArtist" style="color:var(--dim)"></div>
       </div>
       <div style="width:100%;max-width:360px;display:flex;align-items:center;gap:8px">
-        <span style="font-size:12px;color:var(--dim)">${s.position||""}</span>
+        <span id="npPos" style="font-size:12px;color:var(--dim)"></span>
         <input type="range" id="seek" min="0" max="1000" value="0" style="flex:1">
-        <span style="font-size:12px;color:var(--dim)">${s.duration||""}</span>
+        <span id="npDur" style="font-size:12px;color:var(--dim)"></span>
       </div>
     </div>`;
+  $("#seek").onchange=()=>{ const dur=hms((S.status||{}).duration); if(dur>0) cmd("seek", Math.round($("#seek").value/1000*dur)); };
+  _npBuilt=true;
+  _npArtId=null;
+  updateNow();
+}
+function updateNow(){
+  // In-place patch for poll ticks — must never touch #seek.value mid-drag/focus or rebuild the <img> unless the track changed.
+  if(!S.speaker) return;
+  if(!_npBuilt || !$("#npTitle")){ renderNow(); return; }   // structure not built yet (first entry) — build it, which also patches once
+  const s=S.status||{};
+  const t=S.trackMap[s.track_id]||{};
+  $("#npTitle").textContent = s.title || "Nothing playing";   // textContent — inherently escaped, no esc() needed
+  $("#npArtist").textContent = t.artist || "";
+  $("#npPos").textContent = s.position || "";
+  $("#npDur").textContent = s.duration || "";
+  if(s.track_id !== _npArtId){   // only reload art when the track actually changed — avoids refetch/flicker every tick
+    _npArtId = s.track_id;
+    const art = $("#npArt");
+    if(s.track_id){ art.src = "/api/art?id="+enc(s.track_id); art.style.display=""; }
+    else { art.removeAttribute("src"); art.style.display="none"; }
+  }
   const seek=$("#seek");
   const pos=hms(s.position), dur=hms(s.duration);
   if(dur>0 && document.activeElement!==seek) seek.value=Math.round(pos/dur*1000);
-  seek.onchange=()=>{ if(dur>0) cmd("seek", Math.round(seek.value/1000*dur)); };
 }
 function hms(x){ if(!x)return 0; const p=String(x).split(":").map(Number); return p.reduce((a,b)=>a*60+b,0); }
 
@@ -165,9 +183,14 @@ $("#view").addEventListener("click", async e=>{
   }catch(err){ toast(err.message); }
 });
 let _searchT;
+let _tracksReq=0;   // monotonic token — lets a slower earlier /api/tracks response detect it's stale and bail
 async function loadTracks(q){
   S.query = q||"";
-  const d=await api("/api/tracks"+(q?("?q="+enc(q)):""));
+  const reqId = ++_tracksReq;
+  let d;
+  try{ d = await api("/api/tracks"+(q?("?q="+enc(q)):"")); }
+  catch(e){ return; }   // offline mid-search — poll's banner already surfaces this, nothing more to do here
+  if(reqId!==_tracksReq) return;   // a newer search has started since; don't let this stale response clobber it
   S.tracks=d.tracks||[];
   S.trackMap=Object.fromEntries(S.tracks.map(t=>[t.id,t]));
   if(S.tab!=="browse") return;
@@ -213,6 +236,6 @@ $("#tabs").addEventListener("click", e=>{ const b=e.target.closest("button"); if
 
 function render(){ if(S.tab==="now")renderNow(); else if(S.tab==="queue"){renderQueue();refreshQueue();} else renderBrowse(); }
 
-Promise.all([loadRooms(), loadTracks("")]).then(()=>{ render(); poll(); }).catch(()=>online(false));
+Promise.all([loadRooms(), loadTracks("")]).catch(()=>online(false)).finally(()=>{ render(); poll(); });
 </script>
 </body></html>

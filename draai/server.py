@@ -67,7 +67,6 @@ def _load_remote():
         return REMOTE_FALLBACK
 
 
-
 def reveal_in_finder(track_id):
     """Open Finder at a library track's location. Path-guarded."""
     with state_lock:
