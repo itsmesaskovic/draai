@@ -472,7 +472,7 @@ git commit -m "remote: now-playing card and transport"
 - Modify: `remote.html` (implement `refreshQueue()` + `renderQueue()`, wire jump/move/remove/play-next)
 
 **Interfaces:**
-- Consumes: `S`, `api`, `toast`. Queue items from `GET /api/queue?speaker=<uuid>` → `{items:[{no,id,title,...}], total}`; `no` is **0-based**.
+- Consumes: `S`, `api`, `toast`. Queue items from `GET /api/queue?speaker=<uuid>` → `{items:[{no,id,title,...}], total}`; `no` is **1-based** (`browse_queue` uses `enumerate(..., 1)`). `queue_jump`/`queue_move`/`queue_remove` are all 1-based — send `item.no` unchanged.
 - Produces: `refreshQueue()` fills `S.queue` and re-renders when the queue tab is active.
 
 - [ ] **Step 1: Implement queue fetch + render + row actions:**
@@ -488,7 +488,7 @@ function renderQueue(){
   const cur = S.status && S.status.track_no;   // 1-based current position
   if(!S.queue.length){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Nothing queued — add something from Browse.</div>`; return; }
   $("#view").innerHTML = S.queue.map(it=>{
-    const isCur = cur && (it.no+1)===cur;
+    const isCur = cur && it.no===cur;   // it.no and track_no are both 1-based
     return `<div style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);${isCur?"color:rgb(var(--ac))":""}">
       <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-jump="${it.no}">${esc(it.title||"(unknown)")}</div>
       <button data-up="${it.no}" aria-label="Move up">▲</button>
@@ -502,10 +502,10 @@ $("#view").addEventListener("click", async e=>{
   const j=e.target.closest("[data-jump]"), up=e.target.closest("[data-up]"),
         nx=e.target.closest("[data-next]"), rm=e.target.closest("[data-rm]");
   try{
-    if(j){ await api("/api/queue_jump",{speaker:S.speaker,no:(+j.dataset.jump)+1}); }        // 1-based
-    else if(up){ const n=+up.dataset.up; if(n>0) await api("/api/queue_move",{speaker:S.speaker,from:n,to:n-1}); }
-    else if(nx){ const n=+nx.dataset.next; const cur=(S.status&&S.status.track_no)||1; await api("/api/queue_move",{speaker:S.speaker,from:n,to:cur}); }
-    else if(rm){ await api("/api/queue_remove",{speaker:S.speaker,no:+rm.dataset.rm}); }       // 0-based
+    if(j){ await api("/api/queue_jump",{speaker:S.speaker,no:+j.dataset.jump}); }              // no is 1-based
+    else if(up){ const n=+up.dataset.up; if(n>1) await api("/api/queue_move",{speaker:S.speaker,from:n,to:n-1}); }
+    else if(nx){ const n=+nx.dataset.next; const cur=(S.status&&S.status.track_no)||0; await api("/api/queue_move",{speaker:S.speaker,from:n,to:cur+1}); }
+    else if(rm){ await api("/api/queue_remove",{speaker:S.speaker,no:+rm.dataset.rm}); }        // no is 1-based
     else return;
     await refreshQueue();
   }catch(err){ toast(err.message); }
@@ -641,4 +641,4 @@ git commit -m "remote: empty states, offline banner, docs note"
 
 **Placeholder scan:** Engine steps contain full code and exact commands. UI steps give the complete scaffold plus every contract-critical call (exact field names, 0-vs-1-based indices) as runnable code; only pure visual styling is left to the implementer's judgment, which is intended, not a placeholder.
 
-**Type/name consistency:** `S`, `api()`, `toast()`, `cmd()`, `renderNow/Queue/Browse()`, `refreshQueue()`, `loadTracks()`, `enqueue()`, `S.trackMap`, `S.speaker` are defined in Task 4 and reused with identical names/shapes in Tasks 5–8. `queue_jump` uses `no = index+1` (1-based); `queue_remove`/`queue_move` use 0-based `no`/`from`/`to` — consistent across Task 6. `/api/access` returns `{url, remote}` in Task 3 and is consumed (`a.remote`) in the Task 3 QR fix.
+**Type/name consistency:** `S`, `api()`, `toast()`, `cmd()`, `renderNow/Queue/Browse()`, `refreshQueue()`, `loadTracks()`, `enqueue()`, `S.trackMap`, `S.speaker` are defined in Task 4 and reused with identical names/shapes in Tasks 5–8. `queue_jump`/`queue_move`/`queue_remove` are all 1-based (`browse_queue` emits 1-based `no` via `enumerate(..., 1)`); the client sends `item.no` unchanged, "move up" is `to=item.no-1` (guard `item.no>1`), "play next" is `to=track_no+1` — consistent across Task 6. `/api/access` returns `{url, remote}` in Task 3 and is consumed (`a.remote`) in the Task 3 QR fix.

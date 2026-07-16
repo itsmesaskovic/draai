@@ -112,7 +112,7 @@ come from `GET /api/state` (the `speakers` array). Now-playing and the queue are
 |---|---|---|
 | rooms / speakers | `GET /api/state` | `{speakers:[{uuid,name,backend,...}], last_speaker, ...}` |
 | now playing | `GET /api/status?speaker=<uuid>` | `{state, title, position, duration, volume, track_no, track_id}` |
-| queue | `GET /api/queue?speaker=<uuid>` | `{items:[{no,id,title,...}], total}` — `no` is **0-based** |
+| queue | `GET /api/queue?speaker=<uuid>` | `{items:[{no,id,title,...}], total}` — `no` is **1-based** (`enumerate(..., 1)`) |
 | library + search | `GET /api/tracks?q=<text>` | `{tracks:[{id,title,artist,album,has_art,added,dir,folder}], total}` (cap 3000) |
 | cover art | `GET /api/art?id=<track_id>` | image bytes |
 | play/pause | `POST /api/cmd {speaker, action:"resume"|"pause"}` | `{ok:true}` |
@@ -121,15 +121,18 @@ come from `GET /api/state` (the `speakers` array). Now-playing and the queue are
 | shuffle | `POST /api/cmd {speaker, action:"shuffle", value:<bool>}` | `{ok:true}` |
 | room volume | `POST /api/room_volume {speaker, value:0..100}` | `{ok:true}` |
 | add / play-next | `POST /api/enqueue {speaker, ids:[...], next:<bool>}` | `{queued:<n>}` |
-| jump to queue item | `POST /api/queue_jump {speaker, no:<1-based>}` | `{ok:true}` — send `item.no + 1` |
-| move in queue | `POST /api/queue_move {speaker, from:<0-based>, to:<0-based>}` | `{ok:true}` |
-| remove from queue | `POST /api/queue_remove {speaker, no:<0-based>}` | `{ok:true}` — send `item.no` |
+| jump to queue item | `POST /api/queue_jump {speaker, no}` | `{ok:true}` — `no` 1-based, send `item.no` |
+| move in queue | `POST /api/queue_move {speaker, from, to}` | `{ok:true}` — both 1-based |
+| remove from queue | `POST /api/queue_remove {speaker, no}` | `{ok:true}` — 1-based, send `item.no` |
 
-**Index bases matter:** `browse_queue` items carry a 0-based `no`; `queue_remove`
-and `queue_move` use 0-based indices, but `queue_jump` is **1-based** (send
-`item.no + 1`). `queue_move`'s pre-removal `to+1` correction for downward moves
-is handled inside the engine — the client sends plain source/target indices; a
-"move up" is `queue_move(from=item.no, to=item.no-1)`.
+**Index bases matter:** `browse_queue` items carry a **1-based** `no` (it uses
+`enumerate(..., 1)`), and `queue_jump` (Sonos `TRACK_NR`), `queue_move`, and
+`queue_remove` are **all 1-based** — send `item.no` unchanged. `queue_move`'s
+pre-removal `to+1` correction for downward moves is handled inside the engine;
+the client sends plain 1-based source/target positions. "Move up" is
+`queue_move(from=item.no, to=item.no-1)` (guard `item.no > 1`); "play next" is
+`queue_move(from=item.no, to=track_no+1)`; the current row is highlighted when
+`item.no === status.track_no`.
 
 **Now-playing metadata:** `get_status` returns only `title` + `track_id` (not
 artist/album/art). The remote builds an `id → track` map from `GET /api/tracks`
