@@ -25,6 +25,9 @@ def build(target="draai.pyz"):
         top_ui = os.path.join(HERE, "player_ui.html")
         if os.path.isfile(top_ui):
             shutil.copy(top_ui, os.path.join(pkg, "player_ui.html"))
+        top_remote = os.path.join(HERE, "remote.html")
+        if os.path.isfile(top_remote):
+            shutil.copy(top_remote, os.path.join(pkg, "remote.html"))
         out = os.path.join(HERE, target)
         zipapp.create_archive(stage, target=out,
                               interpreter="/usr/bin/env python3",
