@@ -82,8 +82,50 @@ async function poll(){
   finally{ setTimeout(poll, 1000); }
 }
 
+async function cmd(action, value){
+  if(!S.speaker){ toast("Pick a room first."); return; }
+  try{ await api("/api/cmd", value!==undefined ? {speaker:S.speaker,action,value} : {speaker:S.speaker,action}); }
+  catch(e){ toast(e.message); }
+}
+function renderTransport(){
+  const playing = S.status && S.status.state && /PLAYING/.test(S.status.state);
+  $("#transport").innerHTML =
+    `<button id="tPrev" aria-label="Previous">⏮</button>
+     <button id="tPlay" aria-label="Play/pause">${playing?"⏸":"▶"}</button>
+     <button id="tNext" aria-label="Next">⏭</button>
+     <button id="tShuf" aria-label="Shuffle">🔀</button>`;
+  $("#tPrev").onclick=()=>cmd("prev");
+  $("#tNext").onclick=()=>cmd("next");
+  $("#tPlay").onclick=()=>cmd(playing?"pause":"resume");
+  $("#tShuf").onclick=()=>cmd("shuffle", true);
+}
+function renderNow(){
+  renderTransport();
+  const s=S.status||{};
+  const t=S.trackMap[s.track_id]||{};
+  const artist=t.artist||"";
+  const art=s.track_id?`<img src="/api/art?id=${enc(s.track_id)}" alt="" style="width:70vw;max-width:320px;aspect-ratio:1;border-radius:16px;object-fit:cover;background:var(--panel)">`:"";
+  $("#view").innerHTML=`
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 6px">
+      ${art}
+      <div style="text-align:center">
+        <div style="font-size:19px;font-weight:600">${esc(s.title||"Nothing playing")}</div>
+        <div style="color:var(--dim)">${esc(artist)}</div>
+      </div>
+      <div style="width:100%;max-width:360px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--dim)">${s.position||""}</span>
+        <input type="range" id="seek" min="0" max="1000" value="0" style="flex:1">
+        <span style="font-size:12px;color:var(--dim)">${s.duration||""}</span>
+      </div>
+    </div>`;
+  const seek=$("#seek");
+  const pos=hms(s.position), dur=hms(s.duration);
+  if(dur>0 && document.activeElement!==seek) seek.value=Math.round(pos/dur*1000);
+  seek.onchange=()=>{ if(dur>0) cmd("seek", Math.round(seek.value/1000*dur)); };
+}
+function hms(x){ if(!x)return 0; const p=String(x).split(":").map(Number); return p.reduce((a,b)=>a*60+b,0); }
+
 // Placeholder renderers — replaced in later tasks:
-function renderNow(){ $("#view").innerHTML = S.status ? `<div style="text-align:center;padding:40px">${S.status.title||"Nothing playing"}</div>` : ""; }
 function renderQueue(){}
 function renderBrowse(){}
 async function refreshQueue(){}
