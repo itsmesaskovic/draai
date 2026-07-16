@@ -9,3 +9,4 @@ draai/remote.html
 # built UI: assembled from ui/ partials by draai/ui.py (dev) and build.py (.pyz)
 /player_ui.html
 .ai/
+docs/superpowers/
