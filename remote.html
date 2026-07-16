@@ -157,7 +157,40 @@ $("#view").addEventListener("click", async e=>{
     await refreshQueue();
   }catch(err){ toast(err.message); }
 });
-function renderBrowse(){}
+let _searchT;
+async function loadTracks(q){
+  const d=await api("/api/tracks"+(q?("?q="+enc(q)):""));
+  S.tracks=d.tracks||[];
+  S.trackMap=Object.fromEntries(S.tracks.map(t=>[t.id,t]));
+  if(S.tab==="browse") renderBrowse();
+}
+async function enqueue(id, next){
+  if(!S.speaker){ toast("Pick a room first."); return; }
+  try{ await api("/api/enqueue",{speaker:S.speaker,ids:[id],next:!!next}); toast(next?"Playing next":"Added to queue"); }
+  catch(e){ toast(e.message); }
+}
+function renderBrowse(){
+  renderTransport();
+  const rows=S.tracks.slice(0,500).map(t=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:0">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title||"(unknown)")}</div>
+        <div style="font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.artist||"")}</div>
+      </div>
+      <button data-add="${t.id}" aria-label="Add to queue">＋</button>
+      <button data-addnext="${t.id}" aria-label="Play next">⤒</button>
+    </div>`).join("");
+  $("#view").innerHTML =
+    `<input id="q" placeholder="Search…" value="" style="width:100%;padding:11px 13px;margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--tx);font:inherit">
+     <div id="browseList">${rows||`<div style="color:var(--dim);padding:30px;text-align:center">No music yet.</div>`}</div>`;
+  $("#q").oninput=e=>{ clearTimeout(_searchT); const v=e.target.value; _searchT=setTimeout(()=>loadTracks(v),250); };
+}
+// Delegated add actions (extend the existing #view click handler OR add a second listener):
+$("#view").addEventListener("click", e=>{
+  const a=e.target.closest("[data-add]"), an=e.target.closest("[data-addnext]");
+  if(a) enqueue(a.dataset.add, false);
+  else if(an) enqueue(an.dataset.addnext, true);
+});
 
 $("#roomSel").addEventListener("change", e=>{ S.speaker=e.target.value; S.status=null; render(); });
 $("#vol").addEventListener("change", e=>{ if(S.speaker) api("/api/room_volume",{speaker:S.speaker,value:+e.target.value}).catch(err=>toast(err.message)); });
@@ -166,6 +199,6 @@ $("#tabs").addEventListener("click", e=>{ const b=e.target.closest("button"); if
 
 function render(){ if(S.tab==="now")renderNow(); else if(S.tab==="queue"){renderQueue();refreshQueue();} else renderBrowse(); }
 
-loadRooms().then(()=>{ render(); poll(); }).catch(()=>online(false));
+Promise.all([loadRooms(), loadTracks("")]).then(()=>{ render(); poll(); }).catch(()=>online(false));
 </script>
 </body></html>
