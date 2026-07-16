@@ -917,6 +917,17 @@ function drawVU(o,val){ if(!o||!o.W){ if(o) sizeCv(o); if(!o||!o.W) return; } co
   ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(ang)*(R+4),cy+Math.sin(ang)*(R+4)); ctx.stroke();
   ctx.fillStyle="#1a1206"; ctx.beginPath(); ctx.arc(cx,cy,5,0,7); ctx.fill();
 }
+let knobDrag=false;
+function setKnob(el,v,min,max){ const f=(v-min)/(max-min||1); el.style.setProperty("--rot",(-140+f*280)+"deg"); }
+function wireKnob(el,get,set){
+  const range=280, sens=0.7;
+  const start=e=>{ knobDrag=true; const y0=(e.touches?e.touches[0]:e).clientY, v0=get();
+    const move=ev=>{ const y=(ev.touches?ev.touches[0]:ev).clientY; set(v0+(y0-y)*sens); ev.preventDefault(); };
+    const up=()=>{ knobDrag=false; removeEventListener("pointermove",move); removeEventListener("pointerup",up); };
+    addEventListener("pointermove",move); addEventListener("pointerup",up); };
+  el.addEventListener("pointerdown",start);
+  el.addEventListener("wheel",e=>{ set(get()+(e.deltaY<0?2:-2)); e.preventDefault(); },{passive:false});
+}
 
 /* ---------------- status ---------------- */
 function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
@@ -933,6 +944,10 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
   $("#npSpeaker").textContent=spk;
   if(document.activeElement!==$("#volSlider")) setSlider($("#volSlider"),A.status.volume);
   if(document.activeElement!==$("#npVol")) setSlider($("#npVol"),A.status.volume);
+  $("#ampPlay").querySelector(".ic").innerHTML=pp; $("#ampPlay").querySelector(".ic").classList.toggle("fill",playing);
+  $("#ampSpeaker").textContent=spk; $("#srcVal").textContent=A.speaker?A.speaker.name:"—";
+  $("#ampTitle").textContent=A.status.title||"Nothing playing";
+  if(!knobDrag){ setKnob($("#knobVol"),A.status.volume,0,100); $("#volVal").textContent=A.status.volume; }
   // resolve current track id from the ids WE queued, else title match
   const qno=(A.status.track_no||1)-1;
   // trust the local queue mirror only when it agrees with the speaker's queue
@@ -951,7 +966,7 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
 function onTrackChange(id){ const t=A.tracks.find(x=>String(x.id)===String(id));
   getArt(id); loadAnalysis(id); posSec=parseTime(A.status.position);
   const title=(t&&t.title)||A.status.title||"Nothing playing", artist=(t&&t.artist)||"";
-  $("#npTitle").textContent=title; $("#npArtist").textContent=artist; if("mediaSession" in navigator){ try{ navigator.mediaSession.metadata=new MediaMetadata({title:title,artist:artist||"",album:"DRAAI",artwork:(t&&t.has_art&&!DEMO)?[{src:"/api/art?id="+enc(id),sizes:"512x512"}]:[]}); }catch(e){} }
+  $("#npTitle").textContent=title; $("#npArtist").textContent=artist; $("#ampArtist").textContent=artist; if("mediaSession" in navigator){ try{ navigator.mediaSession.metadata=new MediaMetadata({title:title,artist:artist||"",album:"DRAAI",artwork:(t&&t.has_art&&!DEMO)?[{src:"/api/art?id="+enc(id),sizes:"512x512"}]:[]}); }catch(e){} }
   // kinetic type swap
   const meta=$("#npMeta"); meta.classList.remove("swap"); void meta.offsetWidth; if(!REDUCE) meta.classList.add("swap");
   if(A.view!=="queue") renderContent();
@@ -1216,9 +1231,17 @@ function wire(){
   // transport
   const togglePlay=()=>cmd(A.status.state==="PLAYING"?"pause":"resume");
   $("#playBtn").addEventListener("click",togglePlay); $("#npPlay").addEventListener("click",togglePlay);
+  $("#ampPlay").addEventListener("click",togglePlay);
   // volume
   const onVol=e=>{ const v=+e.target.value; setSlider($("#volSlider"),v); setSlider($("#npVol"),v); cmd("volume",v); };
   $("#volSlider").addEventListener("input",onVol); $("#npVol").addEventListener("input",onVol);
+  // amp knobs
+  wireKnob($("#knobVol"),()=>A.status.volume,v=>{ v=clamp(Math.round(v),0,100); A.status.volume=v;
+    setKnob($("#knobVol"),v,0,100); $("#volVal").textContent=v;
+    setSlider($("#volSlider"),v); setSlider($("#npVol"),v); cmd("volume",v); });
+  $("#knobSrc").addEventListener("click",()=>{ if(A.speakers.length<2)return;
+    const i=A.speakers.findIndex(s=>A.speaker&&s.uuid===A.speaker.uuid);
+    const nx=A.speakers[(i+1)%A.speakers.length]; selectRoom(nx.uuid); });
   // seek (both waves)
   $$(".wave").forEach(w=>w.addEventListener("click",e=>{ if(!durSec)return; const r=w.getBoundingClientRect();
     posSec=clamp((e.clientX-r.left)/r.width,0,1)*durSec;
