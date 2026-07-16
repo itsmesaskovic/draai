@@ -154,4 +154,12 @@ function drawWave(o,prog){ if(!o.W) sizeCanvas(o); const {ctx,W,H}=o; ctx.clearR
   // playhead
   const px=prog*W; ctx.fillStyle=(o===npCv)?"#fff":PLAYHEAD; ctx.fillRect(px-1,0,2,H);
 }
+/* ---- shared full-screen switcher (np/amp/spec) ---- */
+const FS_IDS=["np","amp","spec"];
+function openMode(id, sizers){
+  FS_IDS.forEach(x=>$("#"+x).classList.remove("open"));
+  $("#"+id).classList.add("open");
+  requestAnimationFrame(()=>{ (sizers||[]).forEach(s=>s()); });
+}
+function openNp(){ openMode("np",[()=>sizeCanvas(npCv)]); armIdle(); loadAccess(); }
 
