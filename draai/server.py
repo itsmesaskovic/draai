@@ -42,6 +42,31 @@ def _load_ui():
         return PAGE
 
 
+REMOTE_FALLBACK = ('<!doctype html><meta charset="utf-8">'
+                   '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                   '<title>DRAAI remote</title>'
+                   '<body style="font:15px system-ui;margin:2rem;background:#0b0f10;color:#e6f2ef">'
+                   '<div data-remote="1">The DRAAI remote file is missing. '
+                   'Open the full player instead.</div>')
+
+
+def _load_remote():
+    """The slim phone remote (served at /remote): external remote.html in the
+    cwd wins; else the copy embedded in the package; else a minimal fallback."""
+    ext = os.path.join(os.getcwd(), "remote.html")
+    if os.path.isfile(ext):
+        try:
+            with open(ext, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    try:
+        import importlib.resources as res
+        return res.files("draai").joinpath("remote.html").read_text("utf-8")
+    except Exception:
+        return REMOTE_FALLBACK
+
+
 
 def reveal_in_finder(track_id):
     """Open Finder at a library track's location. Path-guarded."""
@@ -313,6 +338,13 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/":
             data = _load_ui().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif path in ("/remote", "/remote/"):
+            data = _load_remote().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))

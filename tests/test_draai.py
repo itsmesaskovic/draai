@@ -296,6 +296,18 @@ class DraaiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
+    def test_remote_page_served(self):
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/remote" % port, timeout=5) as r:
+                body = r.read().decode("utf-8")
+                self.assertEqual(r.status, 200)
+                self.assertIn('data-remote="1"', body)
+        finally:
+            httpd.shutdown()
+
     # -- v1.1: queue management ---------------------------------------------------------
 
     def _seed_queue(self, titles):
