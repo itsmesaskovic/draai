@@ -125,10 +125,39 @@ function renderNow(){
 }
 function hms(x){ if(!x)return 0; const p=String(x).split(":").map(Number); return p.reduce((a,b)=>a*60+b,0); }
 
-// Placeholder renderers — replaced in later tasks:
-function renderQueue(){}
+async function refreshQueue(){
+  if(!S.speaker) return;
+  try{ const q=await api("/api/queue?speaker="+enc(S.speaker)); S.queue=q.items||[]; if(S.tab==="queue") renderQueue(); }
+  catch(e){ /* leave last queue; poll banner handles offline */ }
+}
+function renderQueue(){
+  renderTransport();
+  const cur = S.status && S.status.track_no;   // 1-based current position
+  if(!S.queue.length){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Nothing queued — add something from Browse.</div>`; return; }
+  $("#view").innerHTML = S.queue.map(it=>{
+    const isCur = cur && it.no===cur;   // it.no is 1-based, same scale as track_no
+    return `<div style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);${isCur?"color:rgb(var(--ac))":""}">
+      <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-jump="${it.no}">${esc(it.title||"(unknown)")}</div>
+      <button data-up="${it.no}" aria-label="Move up">▲</button>
+      <button data-next="${it.no}" aria-label="Play next">⤒</button>
+      <button data-rm="${it.no}" aria-label="Remove">✕</button>
+    </div>`;
+  }).join("");
+}
+// Delegated queue actions:
+$("#view").addEventListener("click", async e=>{
+  const j=e.target.closest("[data-jump]"), up=e.target.closest("[data-up]"),
+        nx=e.target.closest("[data-next]"), rm=e.target.closest("[data-rm]");
+  try{
+    if(j){ await api("/api/queue_jump",{speaker:S.speaker,no:+j.dataset.jump}); }              // no is already 1-based
+    else if(up){ const n=+up.dataset.up; if(n>1) await api("/api/queue_move",{speaker:S.speaker,from:n,to:n-1}); }
+    else if(nx){ const n=+nx.dataset.next; const cur=(S.status&&S.status.track_no)||0; await api("/api/queue_move",{speaker:S.speaker,from:n,to:cur+1}); }
+    else if(rm){ await api("/api/queue_remove",{speaker:S.speaker,no:+rm.dataset.rm}); }       // no is already 1-based
+    else return;
+    await refreshQueue();
+  }catch(err){ toast(err.message); }
+});
 function renderBrowse(){}
-async function refreshQueue(){}
 
 $("#roomSel").addEventListener("change", e=>{ S.speaker=e.target.value; S.status=null; render(); });
 $("#vol").addEventListener("change", e=>{ if(S.speaker) api("/api/room_volume",{speaker:S.speaker,value:+e.target.value}).catch(err=>toast(err.message)); });
