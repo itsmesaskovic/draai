@@ -823,7 +823,9 @@ let PEAKS=new Float32Array(0);
 function buildPeaks(){ const p=(analysis&&analysis.peaks)||[]; PEAKS=Float32Array.from(p,v=>v/100); }
 function energyAt(sec){ if(!analysis) return null; const st=analysis.step||0.1, f=sec/st, i=f|0, fr=f-i;
   const g=a=>{ if(!a||!a.length)return 0; const x=a[Math.min(a.length-1,i)]||0,y=a[Math.min(a.length-1,i+1)]||0; return (x+(y-x)*fr)/100; };
-  return {amp:g(analysis.amp),low:g(analysis.low),mid:g(analysis.mid),high:g(analysis.high)}; }
+  return {amp:g(analysis.amp),low:g(analysis.low),mid:g(analysis.mid),high:g(analysis.high),
+          ampL:analysis.ampL?g(analysis.ampL):g(analysis.amp),
+          ampR:analysis.ampR?g(analysis.ampR):g(analysis.amp)}; }
 
 /* smooth playback clock (advance locally between 2s polls) + energy smoothing */
 let posSec=0, durSec=0, playing=false, last=performance.now();
@@ -877,11 +879,18 @@ function openAmp(){ $("#np").classList.remove("open"); $("#amp").classList.add("
   requestAnimationFrame(()=>{ sizeCv(vuLc); sizeCv(vuRc); if(ampCv) sizeCanvas(ampCv); }); }
 function closeAmp(){ $("#amp").classList.remove("open"); }
 function openNp(){ $("#amp").classList.remove("open"); $("#np").classList.add("open"); requestAnimationFrame(()=>sizeCanvas(npCv)); armIdle(); loadAccess(); }
+/* ---- amp meter tuning (A/B/C) ---- */
+const VU_LATENCY = 0.0;    // s — meter energy read offset vs the clock (C2); room-align knob, 0 = off
+const SYNC_NUDGE = 0.25;   // fraction of sub-threshold drift corrected per poll (C1)
+const VU_DB_FLOOR = -38;   // dB — bottom of the perceptual window (B)
+const VU_EPS = 1e-3;       // log floor (B)
+function vuMap(v){ const db = 20*Math.log10(Math.max(v, VU_EPS));
+  return clamp((db - VU_DB_FLOOR) / (0 - VU_DB_FLOOR), 0, 1.10); }   // 0..1.1, >1 keeps red zone / PEAK alive
 function drawAmp(dt,t,prog){
-  const eAmp=playing?sm.amp:0, eLow=playing?sm.low:0, eHigh=playing?sm.high:0;
-  // classic L/R stereo pair: both track overall level, gently decorrelated for life
-  let tL=clamp(eAmp*0.9+eLow*0.28,0,1.12), tR=clamp(eAmp*0.9+eHigh*0.28,0,1.12);
-  if(playing&&!REDUCE){ tL*=1+0.05*Math.sin(t/230); tR*=1+0.05*Math.cos(t/205); }
+  // A: own raw read at the clock (+C offset), NOT the 90ms `sm`. B: perceptual map. E: real per-channel.
+  const em = playing ? energyAt(posSec + VU_LATENCY) : null;
+  let tL = em ? clamp(vuMap(em.ampL), 0, 1.12) : 0;
+  let tR = em ? clamp(vuMap(em.ampR), 0, 1.12) : 0;
   const atk=REDUCE?0.2:1-Math.exp(-dt/0.05), dec=1-Math.exp(-dt/0.24);   // ~50ms attack, ~240ms decay
   vuL+= tL>vuL?(tL-vuL)*atk:(tL-vuL)*dec;
   vuR+= tR>vuR?(tR-vuR)*atk:(tR-vuR)*dec;
@@ -933,7 +942,8 @@ function wireKnob(el,get,set){
 /* ---------------- status ---------------- */
 function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
   durSec=parseTime(A.status.duration); const np=parseTime(A.status.position);
-  if(Math.abs(np-posSec)>1.6 || !playing) posSec=np; // resync when drift or paused
+  if(Math.abs(np-posSec)>1.6 || !playing) posSec=np;              // hard snap on seek/track-change/paused
+  else posSec += (np-posSec)*SYNC_NUDGE;                          // else ease out sub-threshold drift (C1)
   playing=(st==="PLAYING"); if("mediaSession" in navigator){ try{ navigator.mediaSession.playbackState=playing?"playing":"paused"; if(durSec>0) navigator.mediaSession.setPositionState({duration:durSec,position:Math.min(posSec,durSec),playbackRate:1}); }catch(e){} }
   const pp=playing?'<path d="M7 5h3v14H7zM14 5h3v14h-3z"/>':'<path d="M8 5v14l11-7z"/>';
   $("#playIcon").innerHTML=pp; $("#playBtn").querySelector(".ic").classList.toggle("fill",playing);
@@ -1348,7 +1358,10 @@ const Demo=(()=>{
       high.push(clamp((0.3+0.4*Math.abs(Math.sin(tt*5.5))+0.3*rnd())*env*100,0,100));
       amp.push(clamp((0.45*low[i]/100+0.35*mid[i]/100+0.2*high[i]/100+0.05*rnd())*100,0,100)); }
     const peaks=[]; for(let i=0;i<240;i++){ const e=Math.sin(i/240*Math.PI); peaks.push(clamp((0.25+0.75*rnd())*(0.4+0.6*e)*100,4,100)); }
-    return anaC[tid]={status:"ready",duration:dur,step,peaks,amp,low,mid,high};
+    // demo stereo so the twin needles diverge in DEMO (deterministic, not random)
+    const ampL=amp.map((v,i)=>Math.min(100, v*(0.85+0.30*Math.sin(i/7))));
+    const ampR=amp.map((v,i)=>Math.min(100, v*(0.85+0.30*Math.cos(i/9))));
+    return anaC[tid]={status:"ready",duration:dur,step,peaks,amp,low,mid,high,ampL,ampR};
   }
   function findGroup(u){ return speakers.find(s=>(s.members||[]).some(m=>m.uuid===u)); }
   async function route(path,body){ await new Promise(r=>setTimeout(r,70+Math.random()*120));
