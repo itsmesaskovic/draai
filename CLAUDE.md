@@ -1,8 +1,14 @@
 # CLAUDE.md — context for working on DRAAI
 
-DRAAI plays local music on Sonos / IKEA Symfonisk speakers. One
-dependency-free Python engine + one self-contained HTML interface.
-Currently at v1.2.0, live at github.com/itsmesaskovic/draai.
+DRAAI plays local music on Sonos / IKEA Symfonisk and Google Cast /
+Chromecast speakers. One dependency-free Python engine (the `draai/` package)
++ one self-contained HTML interface. Currently at v2.0.1, live at
+github.com/itsmesaskovic/draai.
+
+Deep per-domain references for agents live in `docs/technical/` (architecture,
+sonos-protocol, google-cast, http-and-media, library-and-metadata,
+audio-analysis, web-ui). The gotchas below are the quick reference; those docs
+are the full story.
 
 ## Hard rules (do not break these)
 
@@ -64,12 +70,15 @@ Currently at v1.2.0, live at github.com/itsmesaskovic/draai.
 - The UI began as a Claude Design export; class names are terse. There
   HAVE been collisions: `.spin` and `.disc` already exist in the design —
   vinyl deck uses `.vdisc`/`.vspin` instead. grep before adding classes.
-- Album-palette pipeline: `paletteFromImage` → `setPaletteTarget` (accents
-  clamped to a luminance FLOOR of 0.55 for dark) → lerped in `tick()` →
-  `applyPal` (in light theme accents get a luminance CAP of 0.45 and
-  washes become light tints via `adaptForTheme`; fullscreen `#np` always
-  stays dark). Light mode hides `#bgwrap` (the blurred orbs painted wrong
-  in light — don't re-enable without visual pixel-testing).
+- Album palette drives ONLY the fullscreen now-playing view now (chrome uses
+  the fixed accent). Pipeline: `paletteFromImage` → `setPaletteTarget`
+  (`readableAccent` clamps the NP accent to a luminance FLOOR of 0.55,
+  theme-independent) → lerped in `tick()` → `applyPal` (sets `--np-ac*`).
+  `adaptForTheme` is currently a no-op passthrough (`return c;`) — the
+  theme-specific washing was retired in the fixed-accent redesign. Fullscreen
+  `#np` always stays dark. In light theme `#bgwrap` is NOT hidden — it's shown
+  dimmed (`opacity:.24`, `html[data-theme=light]`); don't restore the old
+  "hide it" behavior. Full detail: `docs/technical/web-ui.md`.
 - Fullscreen is `#np.open`. Media keys use a silent looping <audio> +
   mediaSession, armed on first pointerdown.
 - The built-in fallback UI lives in the engine's PAGE string — keep it
@@ -78,7 +87,7 @@ Currently at v1.2.0, live at github.com/itsmesaskovic/draai.
 
 ## Testing
 
-- `python3 tests/test_draai.py` — 15 tests, no network/speakers/ffmpeg
+- `python3 tests/test_draai.py` — 23 tests, no network/speakers/ffmpeg
   needed. SoapMock implements real Sonos queue semantics. Always run
   before committing; add tests for new engine behavior.
 - UI changes: verify by serving locally with a mocked `soap_call` (see

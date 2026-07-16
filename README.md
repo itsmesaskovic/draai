@@ -2,8 +2,8 @@
 
 **Your library. Your network. Your control.**
 
-**Play your own music on Sonos and IKEA Symfonisk speakers — from your Mac,
-with no cloud, no account, and no subscription.**
+**Play your own music on Sonos, IKEA Symfonisk, and Google Cast / Chromecast
+speakers — from your Mac, with no cloud, no account, and no subscription.**
 
 You have a folder of mp3s. You have a Sonos (or IKEA Symfonisk, which is
 Sonos inside) speaker. Getting the first to play on the second should be
@@ -13,6 +13,11 @@ library, and you can even run it as one downloadable file (`draai.pyz`). It
 runs on your Mac, finds your speakers on your Wi-Fi, and streams your files to
 them directly — bit-perfect, at whatever quality your files are (320 kbps
 mp3s, lossless FLAC, all of it).
+
+It speaks to **Sonos / IKEA Symfonisk** and to **Google Cast / Chromecast**
+devices, side by side — including a Chromecast Audio, which takes hi-res FLAC
+(up to 96 kHz / 24-bit). Both show up together under Rooms. (Sonos and Cast
+can't play *in sync with each other*, but each plays perfectly on its own.)
 
 No Sonos account. No internet needed. Nothing leaves your home network.
 
@@ -84,8 +89,9 @@ worked out of the box.
 - The Terminal prints a short banner and keeps running — that's the engine;
   leave it open. Your browser opens the control panel at
   http://localhost:8765.
-- Your speakers appear under **Rooms** within a few seconds (first time on a
-  new network can take a moment — there's a Rescan button).
+- Your speakers appear under **Rooms** within a few seconds — Sonos /
+  Symfonisk and any Google Cast / Chromecast devices, side by side (first time
+  on a new network can take a moment — there's a Rescan button).
 - Under **Library**, click **＋ Add folder…** and pick your music folder.
   Your songs appear instantly; albums with embedded artwork get covers.
 - Click a song and it plays on the speaker. Click the ⛶ icon in the player
@@ -138,6 +144,8 @@ fix it before moving on.
 ## Features
 
 - Finds Sonos / Symfonisk speakers automatically (or add one by IP address)
+- Also plays to **Google Cast / Chromecast** devices — auto-discovered on the
+  same Wi-Fi, with hi-res FLAC (up to 96 kHz / 24-bit) to a Chromecast Audio
 - A queue you can actually manage: drag to reorder, **Play next**, add whole
   albums or folders, multi-select songs (Cmd/Shift-click, or the Select button)
 - Playlists saved as plain `.m3u` files in your music folder — no database,
@@ -232,6 +240,12 @@ python3 tests/test_draai.py
   speakers. Some routers block device discovery between devices; use *add by
   IP address* (find speaker IPs in the Sonos app under Settings → System →
   About My System).
+- **My Chromecast doesn't appear** — Cast devices are found by mDNS on your
+  local network. Make sure the Chromecast is on the same Wi-Fi, and that your
+  router/firewall isn't blocking multicast (the same "AP isolation" setting
+  that hides Sonos). Press Rescan; discovery can take a few seconds.
+- **A track won't play on a Chromecast** — Chromecast plays FLAC, WAV, MP3 and
+  AAC, but not AIFF or ALAC. Those files still play fine on Sonos.
 - **Music stops when I close the laptop** — The speakers stream from your
   Mac, so the app must be running while music plays.
 - **The song plays but shows no title/art** — That file has no embedded tags
