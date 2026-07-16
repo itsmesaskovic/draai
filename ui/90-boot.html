@@ -17,6 +17,9 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
   $("#ampPlay").querySelector(".ic").innerHTML=pp; $("#ampPlay").querySelector(".ic").classList.toggle("fill",playing);
   $("#ampSpeaker").textContent=spk; $("#srcVal").textContent=A.speaker?A.speaker.name:"—";
   $("#ampTitle").textContent=A.status.title||"Nothing playing";
+  $("#specPlay").querySelector(".ic").innerHTML=pp; $("#specPlay").querySelector(".ic").classList.toggle("fill",playing);
+  $("#specSpeaker").textContent=spk;
+  $("#specTitle").textContent=A.status.title||"Nothing playing";
   if(!knobDrag){ setKnob($("#knobVol"),A.status.volume,0,100); $("#volVal").textContent=A.status.volume; }
   // resolve current track id from the ids WE queued, else title match
   const qno=(A.status.track_no||1)-1;
@@ -36,7 +39,7 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
 function onTrackChange(id){ const t=A.tracks.find(x=>String(x.id)===String(id));
   getArt(id); loadAnalysis(id); posSec=parseTime(A.status.position);
   const title=(t&&t.title)||A.status.title||"Nothing playing", artist=(t&&t.artist)||"";
-  $("#npTitle").textContent=title; $("#npArtist").textContent=artist; $("#ampArtist").textContent=artist; if("mediaSession" in navigator){ try{ navigator.mediaSession.metadata=new MediaMetadata({title:title,artist:artist||"",album:"DRAAI",artwork:(t&&t.has_art&&!DEMO)?[{src:"/api/art?id="+enc(id),sizes:"512x512"}]:[]}); }catch(e){} }
+  $("#npTitle").textContent=title; $("#npArtist").textContent=artist; $("#ampArtist").textContent=artist; $("#specArtist").textContent=artist; if("mediaSession" in navigator){ try{ navigator.mediaSession.metadata=new MediaMetadata({title:title,artist:artist||"",album:"DRAAI",artwork:(t&&t.has_art&&!DEMO)?[{src:"/api/art?id="+enc(id),sizes:"512x512"}]:[]}); }catch(e){} }
   // kinetic type swap
   const meta=$("#npMeta"); meta.classList.remove("swap"); void meta.offsetWidth; if(!REDUCE) meta.classList.add("swap");
   if(A.view!=="queue") renderContent();
@@ -325,6 +328,14 @@ function wire(){
   $("#npToAmp").addEventListener("click",openAmp);
   $("#ampToNp").addEventListener("click",openNp);
   $("#ampClose").addEventListener("click",closeAmp);
+  // spectrum mode
+  $("#specBtn").addEventListener("click",openSpec);
+  $("#npToSpec").addEventListener("click",openSpec);
+  $("#ampToSpec").addEventListener("click",openSpec);
+  $("#specToNp").addEventListener("click",openNp);
+  $("#specToAmp").addEventListener("click",openAmp);
+  $("#specClose").addEventListener("click",()=>$("#spec").classList.remove("open"));
+  $("#specPlay").addEventListener("click",togglePlay);
   $("#lampToggle").addEventListener("click",()=>{ ampLamp=!ampLamp; $("#lampToggle").classList.toggle("on",ampLamp); $("#amp").classList.toggle("lampon",ampLamp); });
   // popovers
   $("#eqBtn").addEventListener("click",e=>{ e.stopPropagation(); $("#sleepPop").classList.remove("open"); $("#eqPop").classList.toggle("open"); });
@@ -353,11 +364,13 @@ function wire(){
   document.addEventListener("keydown",e=>{ if(e.target.tagName==="INPUT")return;
     if(e.code==="Space"){ e.preventDefault(); cmd(A.status.state==="PLAYING"?"pause":"resume"); }
     else if(e.key==="ArrowRight"&&e.shiftKey)cmd("next"); else if(e.key==="ArrowLeft"&&e.shiftKey)cmd("prev");
-    else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $$(".pop").forEach(p=>p.classList.remove("open")); }
-    else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")){ openNp(); } else $("#expandBtn").click(); }
-    else if(e.key==="a"||e.key==="A"){ if($("#amp").classList.contains("open")) closeAmp(); else openAmp(); } });
+    else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $("#spec").classList.remove("open"); $$(".pop").forEach(p=>p.classList.remove("open")); }
+    else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")||$("#spec").classList.contains("open")){ openNp(); } else $("#expandBtn").click(); }
+    else if(e.key==="a"||e.key==="A"){ if($("#amp").classList.contains("open")) closeAmp(); else openAmp(); }
+    else if(e.key==="s"||e.key==="S"){ if($("#spec").classList.contains("open")) $("#spec").classList.remove("open"); else openSpec(); } });
   addEventListener("resize",()=>{ sizeCanvas(dockCv); if($("#np").classList.contains("open"))sizeCanvas(npCv);
-    if($("#amp").classList.contains("open")){ sizeCv(vuLc); sizeCv(vuRc); sizeCanvas(ampCv); } });
+    if($("#amp").classList.contains("open")){ sizeCv(vuLc); sizeCv(vuRc); sizeCanvas(ampCv); }
+    if($("#spec").classList.contains("open")){ sizeCanvas(specC); sizeCanvas(specW2); } });
 }
 function toggleShuffle(){ A.shuffle=!A.shuffle; $("#shufBtn").classList.toggle("on",A.shuffle); $("#npShuf").classList.toggle("on",A.shuffle);
   const st=$("#shuffleToggle"); if(st)st.classList.toggle("on",A.shuffle); cmd("shuffle",A.shuffle); }
@@ -466,6 +479,7 @@ const Demo=(()=>{
 async function boot(){
   dockCv=mkCanvas("#dockWave"); npCv=mkCanvas("#npWave"); sizeCanvas(dockCv);
   ampCv=mkCanvas("#ampWave"); vuLc=mkCv("vuL"); vuRc=mkCv("vuR");
+  specC=mkCanvas(".specstage"); specW2=mkCanvas("#specWave");
   applyPal(); wire(); renderSleep(); requestAnimationFrame(tick);
   try{ const r=await fetch("/api/state"); if(!r.ok)throw 0; }catch(e){ DEMO=true; }
   if(DEMO){ $("#demoBadge").classList.remove("hidden"); toast("Demo mode — no engine detected. Everything works on fake data; connect DRAAI to control real speakers.",true); }

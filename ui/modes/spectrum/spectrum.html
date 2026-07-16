@@ -1,0 +1,22 @@
+<!-- spectrum analyzer mode — FFT-style bars from low/mid/high bands (desktop showpiece, always dark) -->
+<section class="spec" id="spec">
+  <div class="spechead">
+    <div class="lbl">SPECTRUM · <b id="specSpeaker">—</b></div>
+    <div style="display:flex;gap:8px;margin-left:auto">
+      <button class="iconbtn" id="specToNp" title="Now playing view (F)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.6"></circle></svg></button>
+      <button class="iconbtn" id="specToAmp" title="Amplifier view (A)"><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="8" cy="12" r="2.4"></circle><circle cx="16" cy="12" r="2.4"></circle></svg></button>
+      <button class="iconbtn" id="specClose" title="Close (Esc)"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"></path></svg></button>
+    </div>
+  </div>
+  <div class="specstage"><canvas id="specCanvas"></canvas></div>
+  <div class="specfoot">
+    <div class="track"><b id="specTitle">Nothing playing</b><small id="specArtist"></small></div>
+    <div class="ampseek" style="flex:1;max-width:520px"><div class="wave" id="specWave"><canvas></canvas></div>
+      <div class="nprow"><span class="t mono" id="specPos">0:00</span><span class="t mono" id="specDur">0:00</span></div></div>
+    <div class="ampctrls">
+      <button class="cbtn" data-cmd="prev"><svg class="ic fill" viewBox="0 0 24 24"><rect x="5" y="5" width="2.3" height="14" rx="1"></rect><path d="M20 6v12a1 1 0 0 1-1.6.8L9 12l9.4-6.8A1 1 0 0 1 20 6z"></path></svg></button>
+      <button class="play" id="specPlay"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg></button>
+      <button class="cbtn" data-cmd="next"><svg class="ic fill" viewBox="0 0 24 24"><path d="M4 6v12a1 1 0 0 0 1.6.8L15 12 5.6 5.2A1 1 0 0 0 4 6z"></path><rect x="16.7" y="5" width="2.3" height="14" rx="1"></rect></svg></button>
+    </div>
+  </div>
+</section>

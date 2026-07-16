@@ -132,6 +132,7 @@ function tick(t){ const dt=Math.min(.05,(t-last)/1000); last=t;
   $("#npPos").textContent=fmt(posSec); $("#npDur").textContent=fmt(durSec);
   drawWave(dockCv,prog); if($("#np").classList.contains("open")) drawWave(npCv,prog);
   if($("#amp").classList.contains("open")) drawAmp(dt,t,prog);
+  if($("#spec").classList.contains("open")) drawSpec(dt,t,prog);
   requestAnimationFrame(tick);
 }
 function mkCanvas(sel){ const wrap=$(sel), cv=wrap.querySelector("canvas"), ctx=cv.getContext("2d"); return {wrap,cv,ctx}; }

@@ -3,7 +3,7 @@ let vuLc, vuRc, ampCv, vuL=0, vuR=0, peakLT=0, peakRT=0, ampLamp=true;
 function mkCv(id){ const cv=document.getElementById(id); return {cv,ctx:cv.getContext("2d")}; }
 function sizeCv(o){ if(!o||!o.cv) return; const r=o.cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
   o.cv.width=Math.max(1,r.width*dpr); o.cv.height=Math.max(1,r.height*dpr); o.ctx.setTransform(dpr,0,0,dpr,0,0); o.W=r.width; o.H=r.height; }
-const FS_IDS=["np","amp"];   // spectrum will append "spec" next task
+const FS_IDS=["np","amp","spec"];
 function openMode(id, sizers){
   FS_IDS.forEach(x=>$("#"+x).classList.remove("open"));
   $("#"+id).classList.add("open");
