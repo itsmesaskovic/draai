@@ -314,6 +314,16 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # keep the terminal quiet
         pass
 
+    def handle_one_request(self):
+        # Phones, browsers and speakers routinely open a socket and drop it
+        # (speculative connections, Wi-Fi hiccups, a page navigating away).
+        # That surfaces as a benign ConnectionReset/BrokenPipe while reading or
+        # writing — swallow it quietly instead of dumping a stack trace.
+        try:
+            super().handle_one_request()
+        except (ConnectionResetError, BrokenPipeError, TimeoutError):
+            self.close_connection = True
+
     # -- helpers ------------------------------------------------------------
     def send_json(self, obj, code=200):
         data = json.dumps(obj).encode("utf-8")
