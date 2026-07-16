@@ -16,6 +16,7 @@ header{display:flex;align-items:center;gap:10px;padding:12px 14px calc(env(safe-
 main{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:14px}
 .transport{display:flex;align-items:center;justify-content:center;gap:22px;padding:14px;border-top:1px solid var(--line)}
 .transport button{background:transparent;border:0;color:var(--tx);font-size:26px;line-height:1}
+.transport button:disabled{opacity:.3}
 .tabs{display:flex;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{flex:1;background:transparent;border:0;color:var(--dim);font:inherit;padding:12px}
 .tabs button[aria-selected=true]{color:rgb(var(--ac))}
@@ -43,7 +44,7 @@ main{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:14px}
 const $=s=>document.querySelector(s);
 const enc=encodeURIComponent;
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const S={speaker:null, rooms:[], status:null, queue:[], tracks:[], trackMap:{}, tab:"now"};
+const S={speaker:null, rooms:[], status:null, queue:[], tracks:[], trackMap:{}, tab:"now", query:""};
 
 async function api(path, body){
   const opt = body!==undefined ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {};
@@ -74,6 +75,7 @@ async function poll(){
       const [status] = await Promise.all([ api("/api/status?speaker="+enc(S.speaker)) ]);
       S.status = status;
       if(typeof status.volume==="number" && document.activeElement!==$("#vol")) $("#vol").value=status.volume;
+      renderTransport();   // keep play/pause icon current on every tab, not just Now/Queue
       if(S.tab==="now") renderNow();
       if(S.tab==="queue") await refreshQueue();
     }
@@ -89,18 +91,21 @@ async function cmd(action, value){
 }
 function renderTransport(){
   const playing = S.status && S.status.state && /PLAYING/.test(S.status.state);
+  const dis = !S.speaker;
   $("#transport").innerHTML =
-    `<button id="tPrev" aria-label="Previous">⏮</button>
-     <button id="tPlay" aria-label="Play/pause">${playing?"⏸":"▶"}</button>
-     <button id="tNext" aria-label="Next">⏭</button>
-     <button id="tShuf" aria-label="Shuffle">🔀</button>`;
+    `<button id="tPrev" aria-label="Previous" ${dis?"disabled":""}>⏮</button>
+     <button id="tPlay" aria-label="Play/pause" ${dis?"disabled":""}>${playing?"⏸":"▶"}</button>
+     <button id="tNext" aria-label="Next" ${dis?"disabled":""}>⏭</button>
+     <button id="tShuf" aria-label="Shuffle" ${dis?"disabled":""}>🔀</button>`;
   $("#tPrev").onclick=()=>cmd("prev");
   $("#tNext").onclick=()=>cmd("next");
   $("#tPlay").onclick=()=>cmd(playing?"pause":"resume");
   $("#tShuf").onclick=()=>cmd("shuffle", true);
 }
+function pickRoomView(){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Pick a room to start.</div>`; }
 function renderNow(){
   renderTransport();
+  if(!S.speaker){ pickRoomView(); return; }
   const s=S.status||{};
   const t=S.trackMap[s.track_id]||{};
   const artist=t.artist||"";
@@ -132,13 +137,15 @@ async function refreshQueue(){
 }
 function renderQueue(){
   renderTransport();
+  if(!S.speaker){ pickRoomView(); return; }
   const cur = S.status && S.status.track_no;   // 1-based current position
   if(!S.queue.length){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Nothing queued — add something from Browse.</div>`; return; }
   $("#view").innerHTML = S.queue.map(it=>{
     const isCur = cur && it.no===cur;   // it.no is 1-based, same scale as track_no
+    const atTop = it.no===1;
     return `<div style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);${isCur?"color:rgb(var(--ac))":""}">
       <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-jump="${it.no}">${esc(it.title||"(unknown)")}</div>
-      <button data-up="${it.no}" aria-label="Move up">▲</button>
+      <button data-up="${it.no}" aria-label="Move up"${atTop?' disabled style="opacity:.35"':""}>▲</button>
       <button data-next="${it.no}" aria-label="Play next">⤒</button>
       <button data-rm="${it.no}" aria-label="Remove">✕</button>
     </div>`;
@@ -159,18 +166,21 @@ $("#view").addEventListener("click", async e=>{
 });
 let _searchT;
 async function loadTracks(q){
+  S.query = q||"";
   const d=await api("/api/tracks"+(q?("?q="+enc(q)):""));
   S.tracks=d.tracks||[];
   S.trackMap=Object.fromEntries(S.tracks.map(t=>[t.id,t]));
-  if(S.tab==="browse") renderBrowse();
+  if(S.tab!=="browse") return;
+  const list=$("#browseList");
+  if(list) list.innerHTML=browseRows();     // update rows only — never recreate #q (keeps value/focus/keyboard during live search)
+  else renderBrowse();
 }
 async function enqueue(id, next){
   if(!S.speaker){ toast("Pick a room first."); return; }
   try{ await api("/api/enqueue",{speaker:S.speaker,ids:[id],next:!!next}); toast(next?"Playing next":"Added to queue"); }
   catch(e){ toast(e.message); }
 }
-function renderBrowse(){
-  renderTransport();
+function browseRows(){
   const rows=S.tracks.slice(0,500).map(t=>`
     <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--line)">
       <div style="flex:1;min-width:0">
@@ -180,9 +190,13 @@ function renderBrowse(){
       <button data-add="${t.id}" aria-label="Add to queue">＋</button>
       <button data-addnext="${t.id}" aria-label="Play next">⤒</button>
     </div>`).join("");
+  return rows || `<div style="color:var(--dim);padding:30px;text-align:center">${S.query?"No matches.":"No music yet."}</div>`;
+}
+function renderBrowse(){
+  renderTransport();
   $("#view").innerHTML =
-    `<input id="q" placeholder="Search…" value="" style="width:100%;padding:11px 13px;margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--tx);font:inherit">
-     <div id="browseList">${rows||`<div style="color:var(--dim);padding:30px;text-align:center">No music yet.</div>`}</div>`;
+    `<input id="q" placeholder="Search…" value="${esc(S.query)}" style="width:100%;padding:11px 13px;margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--tx);font:inherit">
+     <div id="browseList">${browseRows()}</div>`;
   $("#q").oninput=e=>{ clearTimeout(_searchT); const v=e.target.value; _searchT=setTimeout(()=>loadTracks(v),250); };
 }
 // Delegated add actions (extend the existing #view click handler OR add a second listener):

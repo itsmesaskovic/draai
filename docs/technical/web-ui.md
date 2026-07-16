@@ -81,6 +81,21 @@ Flow: `getArt()` (`player_ui.html:679-687`) loads the track art image, then:
 - `renderSongRows(view)` (`player_ui.html:1248-1275`) only groups when `A.group !== "none"`; it buckets tracks by folder or by artist, builds a `.ghead` header per group (name, track count, play-all/queue-all/reveal-in-Finder buttons, a caret that rotates via `.ghead.collapsed .gcaret{transform:rotate(-90deg)}`, `player_ui.html:255`), and renders that group's `.rows` only if it is not collapsed.
 - Collapse state is keyed by `"<group-mode>:<group-name>"` and stored in the `A.collapsed` `Set` (`player_ui.html:1263,1266`), persisted through `/api/prefs` on every toggle (`gc` click handler, `player_ui.html:1307`, calls `savePrefs()`). A "collapse all / expand all" button (`#collapseAllBtn`, `player_ui.html:1312`) operates over `window.GROUPKEYS`, the list of keys present in the current render.
 
+## Slim remote (/remote)
+
+`GET /remote` serves a separate, much smaller single file, `remote.html`
+(repo root, same load-order precedence as `player_ui.html` via
+`_load_remote()` in `draai/server.py`: external file next to cwd → the
+`draai` package resource → none). It is a phone-sized control surface —
+room switch + volume, transport, up-next queue (reorder/remove/jump), and
+library browse/search/add-to-queue — talking to the same `/api/*` endpoints
+as `player_ui.html`. It does not include grouping, EQ, sleep timer, YouTube
+import, the album-palette pipeline, or the vinyl deck; those stay
+`player_ui.html`-only. `/api/access` returns its URL as `remote` alongside
+the main `url`, and the QR code on `player_ui.html`'s fullscreen view points
+at it. Same single-file rules apply: no CDNs/fonts/localStorage, inline
+CSS/JS, dark-only fixed accent `#5EEAD4`.
+
 ## Gotchas
 
 - **`CLAUDE.md`'s theming notes are partly stale relative to the shipped code** (both superseded intentionally per the design spec, not accidental drift):
