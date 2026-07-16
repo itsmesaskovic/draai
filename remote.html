@@ -4,46 +4,176 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>DRAAI remote</title>
 <style>
-:root{--bg:#0b0f10;--panel:#141a1b;--line:#20292a;--tx:#e6f2ef;--dim:#8fa3a0;--ac:94 234 212;color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,sans-serif;
-     display:flex;flex-direction:column;height:100dvh;overflow:hidden}
-header{display:flex;align-items:center;gap:10px;padding:12px 14px calc(env(safe-area-inset-top) + 12px);border-bottom:1px solid var(--line)}
-.roomchip{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px 12px}
-.roomchip select{flex:1;background:transparent;border:0;color:var(--tx);font:inherit;min-width:0}
-.vol{display:flex;align-items:center;gap:8px;width:130px}
-.vol input{width:100%}
-main{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:14px}
-.transport{display:flex;align-items:center;justify-content:center;gap:22px;padding:14px;border-top:1px solid var(--line)}
-.transport button{background:transparent;border:0;color:var(--tx);font-size:26px;line-height:1}
-.transport button:disabled{opacity:.3}
-.tabs{display:flex;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;background:transparent;border:0;color:var(--dim);font:inherit;padding:12px}
+:root{
+  --ac:94 234 212; --ac2:45 212 191;
+  --tx:#f4f4f7; --dim:#9a9aa6; --dim2:#63636f;
+  --line:rgba(255,255,255,.075); --line2:rgba(255,255,255,.15);
+  --panel:rgba(255,255,255,.03); --panel2:rgba(255,255,255,.06);
+  --page:#08080b; --elev:rgb(11 11 14 / .72); --elev2:rgb(15 15 19 / .97);
+  --track-empty:rgba(255,255,255,.14); --play-ink:#08080b;
+  color-scheme:dark;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--page);color:var(--tx);-webkit-font-smoothing:antialiased;letter-spacing:-.011em;
+  display:flex;flex-direction:column;height:100dvh;overflow:hidden;position:relative}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(60vw 46vh at 82% -8%,rgb(var(--ac) / .10),transparent 70%),
+             radial-gradient(70vw 40vh at 8% 108%,rgb(var(--ac2) / .08),transparent 70%)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input{font:inherit;color:inherit}
+svg{display:block}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.fill{fill:currentColor;stroke:none}
+.mono{font-variant-numeric:tabular-nums;letter-spacing:0}
+header,main,.dock,.tabs{position:relative;z-index:1}
+
+/* header */
+header{display:flex;align-items:center;gap:10px;
+  padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;border-bottom:1px solid var(--line)}
+.mark{width:30px;height:30px;border-radius:9px;flex:none;position:relative;
+  background:conic-gradient(from 210deg,rgb(var(--ac)),rgb(var(--ac2)),rgb(var(--ac)));
+  box-shadow:0 0 20px rgb(var(--ac) / .45),inset 0 0 0 1px rgba(255,255,255,.25)}
+.mark::after{content:"";position:absolute;inset:8px;border-radius:4px;background:var(--page)}
+.roomchip{flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.roomchip .spk{width:16px;height:16px;color:rgb(var(--ac))}
+.roomchip .cv{width:15px;height:15px;color:var(--dim2)}
+.roomchip select{flex:1;min-width:0;background:transparent;border:0;color:var(--tx);font:inherit;
+  font-weight:560;appearance:none;-webkit-appearance:none;text-overflow:ellipsis}
+.vol{display:flex;align-items:center;gap:8px;width:104px;flex:none}
+.vol .ic{width:18px;height:18px;color:var(--dim)}
+
+/* sliders (seek + volume) */
+.slider{-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;width:100%;
+  background:linear-gradient(90deg,rgb(var(--ac)) var(--v,50%),var(--track-empty) var(--v,50%));cursor:pointer}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 0 8px rgb(var(--ac))}
+.slider::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;background:#fff;box-shadow:0 0 8px rgb(var(--ac))}
+
+main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 12px 12px;display:flex;flex-direction:column}
+
+/* now playing */
+.now{display:flex;flex-direction:column;align-items:center;gap:20px;padding:22px 8px 8px;margin:auto 0}
+.now .cover{width:min(72vw,320px);aspect-ratio:1;border-radius:20px;background:#15151b;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.06)}
+.now .cover img{width:100%;height:100%;object-fit:cover;display:none}
+.now .ninfo{text-align:center;max-width:100%;padding:0 8px}
+.now .ninfo b{font-size:20px;font-weight:600;line-height:1.25;display:block;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now .ninfo small{font-size:14px;color:var(--dim);display:block;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seekwrap{display:flex;align-items:center;gap:12px;width:100%;max-width:360px}
+.seekwrap .t{font-size:11.5px;color:var(--dim);width:42px;flex:none}
+.seekwrap .t.r{text-align:right}
+
+/* rows (queue + browse) */
+.rows{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:12px;padding:8px 8px;border-radius:11px;
+  border-bottom:1px solid var(--line);position:relative}
+.row:last-child{border-bottom:0}
+.row.playing{background:linear-gradient(90deg,rgb(var(--ac) / .15),rgb(var(--ac) / .02) 62%);
+  box-shadow:inset 3px 0 0 rgb(var(--ac));border-bottom-color:transparent}
+.rmain{flex:1;min-width:0;display:flex;align-items:center;gap:12px;cursor:pointer}
+.rthumb{width:46px;height:46px;border-radius:9px;overflow:hidden;position:relative;flex:none;
+  background:#15151b;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);display:grid;place-items:center}
+.rthumb img{width:100%;height:100%;object-fit:cover}
+.rthumb .idx{font-size:12.5px;color:var(--dim2);font-variant-numeric:tabular-nums}
+.tt{min-width:0;flex:1}
+.tt b{font-size:14px;font-weight:520;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row.playing .tt b{color:rgb(var(--ac))}
+.tt small{font-size:12px;color:var(--dim);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qacts{display:flex;gap:2px;flex:none}
+.iconbtn{width:38px;height:38px;border-radius:9px;display:grid;place-items:center;color:var(--dim);border:1px solid transparent;transition:.12s}
+.iconbtn:active{color:var(--tx);background:var(--panel2)}
+.iconbtn .ic{width:18px;height:18px}
+.iconbtn:disabled{opacity:.32}
+
+/* search */
+.searchbar{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);
+  border-radius:13px;padding:10px 13px;margin:2px 0 10px}
+.searchbar .ic{width:18px;height:18px;color:var(--dim2)}
+.searchbar input{flex:1;min-width:0;background:transparent;border:0;color:var(--tx);font:inherit}
+.searchbar input::placeholder{color:var(--dim2)}
+
+/* empty states */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  padding:40px 24px;margin:auto 0;color:var(--dim2);text-align:center;line-height:1.5}
+.empty .ic{width:34px;height:34px}
+
+/* transport dock */
+.dock{display:flex;align-items:center;justify-content:center;gap:14px;
+  margin:0 12px 6px;padding:9px 16px;border:1px solid var(--line);background:var(--elev);
+  backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border-radius:18px;box-shadow:0 16px 40px rgba(0,0,0,.42)}
+.cbtn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--dim);transition:.12s}
+.cbtn:active{color:var(--tx)}
+.cbtn .ic{width:22px;height:22px}
+.cbtn:disabled{opacity:.3}
+.play{width:56px;height:56px;border-radius:50%;background:var(--tx);color:var(--play-ink);
+  display:grid;place-items:center;box-shadow:0 6px 22px rgba(0,0,0,.45);transition:transform .15s}
+.play:active{transform:scale(.94)}
+.play .ic{width:26px;height:26px;fill:currentColor;stroke:none}
+.play:disabled{opacity:.4}
+
+/* bottom tabs */
+.tabs{display:flex;border-top:1px solid var(--line);background:var(--elev);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 0 12px;
+  color:var(--dim2);font-size:11px;font-weight:600;letter-spacing:.02em;position:relative}
+.tabs button .ic{width:20px;height:20px}
 .tabs button[aria-selected=true]{color:rgb(var(--ac))}
-.toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:#000c;color:#fff;
-       padding:10px 14px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;max-width:80%}
-.toast.show{opacity:1}
-.banner{background:#3a1113;color:#ffd9d9;padding:8px 14px;font-size:13px;text-align:center;display:none}
+.tabs button[aria-selected=true]::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:26px;height:2px;border-radius:0 0 2px 2px;background:rgb(var(--ac))}
+
+/* toast + offline banner */
+.toast{position:fixed;left:50%;bottom:154px;transform:translateX(-50%) translateY(6px);
+  background:var(--elev2);color:var(--tx);border:1px solid var(--line2);padding:10px 16px;border-radius:12px;
+  font-size:13px;opacity:0;transition:.2s;pointer-events:none;max-width:80%;box-shadow:0 12px 30px rgba(0,0,0,.45);z-index:30}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.banner{position:absolute;top:0;left:0;right:0;z-index:20;background:rgb(58 17 19 / .96);color:#ffd9d9;
+  padding:calc(env(safe-area-inset-top) + 7px) 14px 7px;font-size:12.5px;text-align:center;display:none}
 .banner.show{display:block}
 </style>
 </head><body data-remote="1">
 <div class="banner" id="banner">Can't reach DRAAI — same Wi-Fi?</div>
 <header>
-  <div class="roomchip"><select id="roomSel" aria-label="Room"></select></div>
-  <div class="vol">🔊<input type="range" id="vol" min="0" max="100" value="30"></div>
+  <div class="mark" aria-hidden="true"></div>
+  <label class="roomchip">
+    <svg class="ic spk" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2.4"/><circle cx="12" cy="14" r="3.2"/><circle cx="12" cy="7" r="1"/></svg>
+    <select id="roomSel" aria-label="Room"></select>
+    <svg class="ic cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+  </label>
+  <div class="vol">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>
+    <input type="range" id="vol" class="slider" min="0" max="100" value="30">
+  </div>
 </header>
 <main id="view"></main>
-<div class="transport" id="transport"></div>
+<div class="dock" id="transport"></div>
 <nav class="tabs" id="tabs">
-  <button data-tab="now" aria-selected="true">Now</button>
-  <button data-tab="queue" aria-selected="false">Up next</button>
-  <button data-tab="browse" aria-selected="false">Browse</button>
+  <button data-tab="now" aria-selected="true"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="0.8"/></svg><span>Now</span></button>
+  <button data-tab="queue" aria-selected="false"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h13M3 12h9M3 18h9M17 12v6M14 15h6"/></svg><span>Up next</span></button>
+  <button data-tab="browse" aria-selected="false"><svg class="ic" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span>Browse</span></button>
 </nav>
 <div class="toast" id="toast"></div>
 <script>
 const $=s=>document.querySelector(s);
 const enc=encodeURIComponent;
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// icon set — identical glyphs to the desktop player_ui.html
+const IC={
+  shuffle:'<svg class="ic" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>',
+  prev:'<svg class="ic fill" viewBox="0 0 24 24"><rect x="5" y="5" width="2.3" height="14" rx="1"/><path d="M20 6v12a1 1 0 0 1-1.6.8L9 12l9.4-6.8A1 1 0 0 1 20 6z"/></svg>',
+  next:'<svg class="ic fill" viewBox="0 0 24 24"><path d="M4 6v12a1 1 0 0 0 1.6.8L15 12 5.6 5.2A1 1 0 0 0 4 6z"/><rect x="16.7" y="5" width="2.3" height="14" rx="1"/></svg>',
+  play:'<svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  pause:'<svg class="ic" viewBox="0 0 24 24"><path d="M7 5h3.2v14H7zM13.8 5H17v14h-3.2z"/></svg>',
+  up:'<svg class="ic" viewBox="0 0 24 24"><path d="M12 19V6M6 12l6-6 6 6"/></svg>',
+  queuePlus:'<svg class="ic" viewBox="0 0 24 24"><path d="M3 6h13M3 12h9M3 18h9M17 12v6M14 15h6"/></svg>',
+  add:'<svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  x:'<svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"/></svg>',
+  search:'<svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  speaker:'<svg class="ic" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2.4"/><circle cx="12" cy="14" r="3.2"/><circle cx="12" cy="7" r="1"/></svg>',
+};
 const S={speaker:null, rooms:[], status:null, queue:[], tracks:[], trackMap:{}, tab:"now", query:""};
 
 async function api(path, body){
@@ -55,6 +185,7 @@ async function api(path, body){
 }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2600); }
 function online(ok){ $("#banner").classList.toggle("show", !ok); }
+function fill(el){ if(el) el.style.setProperty("--v",(el.value/(el.max||100)*100)+"%"); }   // colour the filled part of a slider
 
 async function loadRooms(){
   const st = await api("/api/state");
@@ -74,7 +205,7 @@ async function poll(){
     if(S.speaker){
       const [status] = await Promise.all([ api("/api/status?speaker="+enc(S.speaker)) ]);
       S.status = status;
-      if(typeof status.volume==="number" && document.activeElement!==$("#vol")) $("#vol").value=status.volume;
+      if(typeof status.volume==="number" && document.activeElement!==$("#vol")){ $("#vol").value=status.volume; fill($("#vol")); }
       renderTransport();   // keep play/pause icon current on every tab, not just Now/Queue
       if(S.tab==="now") updateNow();   // in-place patch — never rebuild #view here (would kill mid-drag seek + reload art)
       if(S.tab==="queue") await refreshQueue();
@@ -93,35 +224,36 @@ function renderTransport(){
   const playing = S.status && S.status.state && /PLAYING/.test(S.status.state);
   const dis = !S.speaker;
   $("#transport").innerHTML =
-    `<button id="tPrev" aria-label="Previous" ${dis?"disabled":""}>⏮</button>
-     <button id="tPlay" aria-label="Play/pause" ${dis?"disabled":""}>${playing?"⏸":"▶"}</button>
-     <button id="tNext" aria-label="Next" ${dis?"disabled":""}>⏭</button>
-     <button id="tShuf" aria-label="Shuffle" ${dis?"disabled":""}>🔀</button>`;
-  $("#tPrev").onclick=()=>cmd("prev");
-  $("#tNext").onclick=()=>cmd("next");
-  $("#tPlay").onclick=()=>cmd(playing?"pause":"resume");
+    `<button class="cbtn" id="tShuf" aria-label="Shuffle" ${dis?"disabled":""}>${IC.shuffle}</button>
+     <button class="cbtn" id="tPrev" aria-label="Previous" ${dis?"disabled":""}>${IC.prev}</button>
+     <button class="play" id="tPlay" aria-label="Play or pause" ${dis?"disabled":""}>${playing?IC.pause:IC.play}</button>
+     <button class="cbtn" id="tNext" aria-label="Next" ${dis?"disabled":""}>${IC.next}</button>
+     <div class="cbtn" aria-hidden="true"></div>`;
   $("#tShuf").onclick=()=>cmd("shuffle", true);
+  $("#tPrev").onclick=()=>cmd("prev");
+  $("#tPlay").onclick=()=>cmd(playing?"pause":"resume");
+  $("#tNext").onclick=()=>cmd("next");
 }
 let _npBuilt=false;   // has the Now DOM been built once? (rebuilt on tab entry/room change, patched in place on poll)
 let _npArtId=null;    // track_id whose art is currently loaded — only touch the <img> when this changes
-function pickRoomView(){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Pick a room to start.</div>`; _npBuilt=false; }
+function emptyView(icon, html){ $("#view").innerHTML=`<div class="empty">${icon}<div>${html}</div></div>`; }
+function pickRoomView(){ emptyView(IC.speaker,"Pick a room to start."); _npBuilt=false; }
 function renderNow(){
   renderTransport();
   if(!S.speaker){ pickRoomView(); return; }
   $("#view").innerHTML=`
-    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 6px">
-      <img id="npArt" alt="" style="width:70vw;max-width:320px;aspect-ratio:1;border-radius:16px;object-fit:cover;background:var(--panel);display:none">
-      <div style="text-align:center">
-        <div id="npTitle" style="font-size:19px;font-weight:600"></div>
-        <div id="npArtist" style="color:var(--dim)"></div>
-      </div>
-      <div style="width:100%;max-width:360px;display:flex;align-items:center;gap:8px">
-        <span id="npPos" style="font-size:12px;color:var(--dim)"></span>
-        <input type="range" id="seek" min="0" max="1000" value="0" style="flex:1">
-        <span id="npDur" style="font-size:12px;color:var(--dim)"></span>
+    <div class="now">
+      <div class="cover"><img id="npArt" alt="" onerror="this.style.display='none'"></div>
+      <div class="ninfo"><b id="npTitle"></b><small id="npArtist"></small></div>
+      <div class="seekwrap">
+        <span class="t mono" id="npPos"></span>
+        <input type="range" id="seek" class="slider" min="0" max="1000" value="0">
+        <span class="t r mono" id="npDur"></span>
       </div>
     </div>`;
-  $("#seek").onchange=()=>{ const dur=hms((S.status||{}).duration); if(dur>0) cmd("seek", Math.round($("#seek").value/1000*dur)); };
+  const seek=$("#seek");
+  seek.oninput=()=>fill(seek);
+  seek.onchange=()=>{ const dur=hms((S.status||{}).duration); if(dur>0) cmd("seek", Math.round(seek.value/1000*dur)); };
   _npBuilt=true;
   _npArtId=null;
   updateNow();
@@ -139,12 +271,13 @@ function updateNow(){
   if(s.track_id !== _npArtId){   // only reload art when the track actually changed — avoids refetch/flicker every tick
     _npArtId = s.track_id;
     const art = $("#npArt");
-    if(s.track_id){ art.src = "/api/art?id="+enc(s.track_id); art.style.display=""; }
+    // skip the fetch when the library map says this track has no art; onerror hides it if a fetch 404s anyway
+    if(s.track_id && (S.trackMap[s.track_id]||{}).has_art!==false){ art.src = "/api/art?id="+enc(s.track_id); art.style.display="block"; }
     else { art.removeAttribute("src"); art.style.display="none"; }
   }
   const seek=$("#seek");
   const pos=hms(s.position), dur=hms(s.duration);
-  if(dur>0 && document.activeElement!==seek) seek.value=Math.round(pos/dur*1000);
+  if(dur>0 && document.activeElement!==seek){ seek.value=Math.round(pos/dur*1000); fill(seek); }
 }
 function hms(x){ if(!x)return 0; const p=String(x).split(":").map(Number); return p.reduce((a,b)=>a*60+b,0); }
 
@@ -157,17 +290,27 @@ function renderQueue(){
   renderTransport();
   if(!S.speaker){ pickRoomView(); return; }
   const cur = S.status && S.status.track_no;   // 1-based current position
-  if(!S.queue.length){ $("#view").innerHTML=`<div style="color:var(--dim);text-align:center;padding:40px">Nothing queued — add something from Browse.</div>`; return; }
-  $("#view").innerHTML = S.queue.map(it=>{
+  if(!S.queue.length){ emptyView(IC.queuePlus,"Nothing queued yet.<br>Add something from Browse."); return; }
+  $("#view").innerHTML = `<div class="rows">`+S.queue.map(it=>{
     const isCur = cur && it.no===cur;   // it.no is 1-based, same scale as track_no
     const atTop = it.no===1;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);${isCur?"color:rgb(var(--ac))":""}">
-      <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-jump="${it.no}">${esc(it.title||"(unknown)")}</div>
-      <button data-up="${it.no}" aria-label="Move up"${atTop?' disabled style="opacity:.35"':""}>▲</button>
-      <button data-next="${it.no}" aria-label="Play next">⤒</button>
-      <button data-rm="${it.no}" aria-label="Remove">✕</button>
+    const meta = S.trackMap[it.id]||{};   // pull artist from the library map when we have it
+    const sub = isCur ? "Now playing" : (meta.artist || "Up next");
+    const thumb = it.id
+      ? `<div class="rthumb"><img loading="lazy" src="/api/art?id=${enc(it.id)}" alt="" onerror="this.remove()"></div>`
+      : `<div class="rthumb"><span class="idx">${it.no}</span></div>`;
+    return `<div class="row ${isCur?"playing":""}">
+      <div class="rmain" data-jump="${it.no}">
+        ${thumb}
+        <div class="tt"><b>${esc(it.title||"(unknown)")}</b><small>${esc(sub)}</small></div>
+      </div>
+      <div class="qacts">
+        <button class="iconbtn" data-up="${it.no}" aria-label="Move up"${atTop?" disabled":""}>${IC.up}</button>
+        <button class="iconbtn" data-next="${it.no}" aria-label="Play next">${IC.queuePlus}</button>
+        <button class="iconbtn" data-rm="${it.no}" aria-label="Remove">${IC.x}</button>
+      </div>
     </div>`;
-  }).join("");
+  }).join("")+`</div>`;
 }
 // Delegated queue actions:
 $("#view").addEventListener("click", async e=>{
@@ -204,25 +347,31 @@ async function enqueue(id, next){
   catch(e){ toast(e.message); }
 }
 function browseRows(){
-  const rows=S.tracks.slice(0,500).map(t=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--line)">
-      <div style="flex:1;min-width:0">
-        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title||"(unknown)")}</div>
-        <div style="font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.artist||"")}</div>
+  if(!S.tracks.length) return `<div class="empty">${IC.search}<div>${S.query?"No matches.":"No music yet."}</div></div>`;
+  return `<div class="rows">`+S.tracks.slice(0,500).map(t=>{
+    const thumb = t.has_art
+      ? `<div class="rthumb"><img loading="lazy" src="/api/art?id=${enc(t.id)}" alt="" onerror="this.remove()"></div>`
+      : `<div class="rthumb"></div>`;
+    return `<div class="row">
+      <div class="rmain">
+        ${thumb}
+        <div class="tt"><b>${esc(t.title||"(unknown)")}</b><small>${esc(t.artist||"")}</small></div>
       </div>
-      <button data-add="${t.id}" aria-label="Add to queue">＋</button>
-      <button data-addnext="${t.id}" aria-label="Play next">⤒</button>
-    </div>`).join("");
-  return rows || `<div style="color:var(--dim);padding:30px;text-align:center">${S.query?"No matches.":"No music yet."}</div>`;
+      <div class="qacts">
+        <button class="iconbtn" data-add="${t.id}" aria-label="Add to queue">${IC.add}</button>
+        <button class="iconbtn" data-addnext="${t.id}" aria-label="Play next">${IC.queuePlus}</button>
+      </div>
+    </div>`;
+  }).join("")+`</div>`;
 }
 function renderBrowse(){
   renderTransport();
   $("#view").innerHTML =
-    `<input id="q" placeholder="Search…" value="${esc(S.query)}" style="width:100%;padding:11px 13px;margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--tx);font:inherit">
+    `<div class="searchbar">${IC.search}<input id="q" placeholder="Search your library" value="${esc(S.query)}"></div>
      <div id="browseList">${browseRows()}</div>`;
   $("#q").oninput=e=>{ clearTimeout(_searchT); const v=e.target.value; _searchT=setTimeout(()=>loadTracks(v),250); };
 }
-// Delegated add actions (extend the existing #view click handler OR add a second listener):
+// Delegated add actions (second listener — matches disjoint selectors from the queue handler above):
 $("#view").addEventListener("click", e=>{
   const a=e.target.closest("[data-add]"), an=e.target.closest("[data-addnext]");
   if(a) enqueue(a.dataset.add, false);
@@ -230,12 +379,14 @@ $("#view").addEventListener("click", e=>{
 });
 
 $("#roomSel").addEventListener("change", e=>{ S.speaker=e.target.value; S.status=null; render(); });
+$("#vol").addEventListener("input", e=>fill(e.target));
 $("#vol").addEventListener("change", e=>{ if(S.speaker) api("/api/room_volume",{speaker:S.speaker,value:+e.target.value}).catch(err=>toast(err.message)); });
 $("#tabs").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b)return;
   S.tab=b.dataset.tab; [...$("#tabs").children].forEach(x=>x.setAttribute("aria-selected", x===b)); render(); });
 
 function render(){ if(S.tab==="now")renderNow(); else if(S.tab==="queue"){renderQueue();refreshQueue();} else renderBrowse(); }
 
+fill($("#vol"));
 Promise.all([loadRooms(), loadTracks("")]).catch(()=>online(false)).finally(()=>{ render(); poll(); });
 </script>
 </body></html>
