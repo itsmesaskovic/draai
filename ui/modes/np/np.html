@@ -1,0 +1,51 @@
+<!-- fullscreen showpiece -->
+<section class="np" id="np">
+  <div class="npbg"><b class="a"></b><b class="b"></b></div>
+  <div class="nphead">
+    <div class="lbl">PLAYING IN <b id="npSpeaker">—</b></div>
+    <button class="iconbtn" id="vinylBtn" title="Vinyl deck"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3.4"></circle><circle cx="12" cy="12" r="0.8"></circle></svg></button>
+    <button class="iconbtn" id="npToAmp" title="Amplifier view (A)"><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="8" cy="12" r="2.4"></circle><circle cx="16" cy="12" r="2.4"></circle></svg></button>
+    <button class="iconbtn" id="npClose"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"></path></svg></button>
+  </div>
+  <div class="npbody">
+    <div class="artstage"><div class="halo"></div><div class="npart" id="npArtWrap"><img id="npArt" alt=""></div>
+      <div class="vinylstage hidden" id="vinylStage">
+        <div class="vdisc" id="disc">
+          <div class="dlabel" id="dLabel"></div>
+          <div class="spindle"></div>
+        </div>
+        <div class="tonearm" id="tonearm"><div class="pivot"></div><div class="armrod"></div><div class="headshell"></div></div>
+      </div>
+    </div>
+    <div class="npmeta" id="npMeta">
+      <div class="k">Now Playing</div>
+      <h2><span class="kin" id="npTitle">Nothing playing</span></h2>
+      <div class="art"><span class="kin" id="npArtist"></span></div>
+      <div class="npseek">
+        <div class="wave" id="npWave"><canvas></canvas></div>
+        <div class="nprow"><span class="t mono" id="npPos">0:00</span><span class="t mono" id="npDur">0:00</span></div>
+      </div>
+      <div class="npctrls">
+        <button class="cbtn" id="npShuf" title="Shuffle"><svg class="ic" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"></path></svg></button>
+        <button class="cbtn" data-cmd="prev"><svg class="ic fill" viewBox="0 0 24 24"><rect x="5" y="5" width="2.3" height="14" rx="1"></rect><path d="M20 6v12a1 1 0 0 1-1.6.8L9 12l9.4-6.8A1 1 0 0 1 20 6z"></path></svg></button>
+        <button class="play" id="npPlay"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg></button>
+        <button class="cbtn" data-cmd="next"><svg class="ic fill" viewBox="0 0 24 24"><path d="M4 6v12a1 1 0 0 0 1.6.8L15 12 5.6 5.2A1 1 0 0 0 4 6z"></path><rect x="16.7" y="5" width="2.3" height="14" rx="1"></rect></svg></button>
+        <button class="cbtn" id="npEq" title="Equalizer"><svg class="ic" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg></button>
+      </div>
+      <div class="npextra">
+        <div class="vol" style="width:220px">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"></path></svg>
+          <input type="range" class="slider" id="npVol" min="0" max="100" value="30">
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="npfoot">
+    <div class="qr hidden" id="qrWrap">
+      <div class="qbox" id="qrBox"></div>
+      <div class="cap"><b>Scan to be the DJ</b>Guests on the Wi-Fi can queue songs from their phone.</div>
+    </div>
+    <div class="lbl" id="npClock" style="color:var(--dim)"></div>
+  </div>
+</section>
+

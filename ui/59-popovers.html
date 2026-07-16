@@ -1,0 +1,33 @@
+<!-- popovers -->
+<div id="pickerOverlay" class="hidden">
+  <div class="picker">
+    <h3>Add a music folder</h3>
+    <div class="shorts" id="pickShorts"></div>
+    <div class="crumb" id="pickCrumb"></div>
+    <div class="plist" id="pickList"></div>
+    <div class="rowbtns">
+      <button class="btn" id="pickUp">&#8593; Up</button>
+      <button class="btn" id="pickCancel">Cancel</button>
+      <button class="btn acc" id="pickChoose">Use this folder</button>
+    </div>
+  </div>
+</div>
+<div class="pop" id="eqPop">
+  <h3>Speaker EQ</h3><div class="hint" id="eqHint">Real bass &amp; treble on the speaker.</div>
+  <div class="eqdeck">
+    <div class="fader"><div class="fadetrack"><div class="rail"></div><div class="ticks"><i></i><i></i><i></i><i></i><i></i></div><input type="range" id="bassSlider" min="-10" max="10" value="0"></div><div class="lab">Bass</div><div class="val mono" id="bassVal">0</div></div>
+    <div class="fader"><div class="fadetrack"><div class="rail"></div><div class="ticks"><i></i><i></i><i></i><i></i><i></i></div><input type="range" id="trebleSlider" min="-10" max="10" value="0"></div><div class="lab">Treble</div><div class="val mono" id="trebleVal">0</div></div>
+  </div>
+  <div class="rocker" id="loudToggle"><div><b>Loudness</b><small>Boost lows &amp; highs at low volume</small></div><span class="sw"></span></div>
+</div>
+
+<div class="pop" id="sleepPop">
+  <h3>Sleep timer</h3><div class="hint">Fade the room to silence.</div>
+  <div class="chips" id="sleepChips"></div>
+  <div class="sleepstate hidden" id="sleepState"></div>
+</div>
+
+<div class="pop" id="groupPop"><h3>Group rooms</h3><div class="hint" id="groupHint">Play in sync across rooms.</div><div id="groupOpts"></div></div>
+
+<div class="toasts" id="toasts"></div>
+

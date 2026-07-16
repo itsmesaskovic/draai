@@ -1,0 +1,26 @@
+/* ---------------- responsive / guest phone view ---------------- */
+@media(max-width:820px){
+  #app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"main" "main" "dock"}
+  .side{display:none}
+  .top{padding:16px 18px 10px;flex-wrap:wrap}
+  .search{max-width:none;order:2;width:100%}
+  .segmented{margin-left:0;order:1}
+  .scroll{padding:6px 18px 24px}
+  .wall{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:18px 14px}
+  .row{grid-template-columns:44px minmax(0,1fr) auto;gap:12px}
+  .row .alb{display:none}
+  .row .acts{opacity:1;pointer-events:auto}
+  .dock{grid-template-columns:1fr auto;grid-template-areas:"now now" "seek seek" "ctr right";gap:10px;padding:12px 16px;height:auto}
+  .npnow{grid-area:now}.center{grid-area:ctr;align-items:flex-start}.right{grid-area:right}
+  .seekwrap{grid-area:seek}
+  .cbtn{width:44px;height:44px}.play{width:52px;height:52px}
+  .iconbtn{width:40px;height:40px}
+  .npbody{grid-template-columns:1fr;gap:22px;padding:0 26px 30px;align-content:center;text-align:center;overflow-y:auto}
+  .artstage{justify-self:center;width:min(62vw,300px)}
+  .npmeta{align-items:center;max-width:none}
+  .npmeta h2{font-size:clamp(26px,8vw,40px)}
+  .npctrls{justify-content:center}.npextra{justify-content:center}
+  .npfoot{flex-direction:column;gap:16px;align-items:center}
+  .nphead,.npfoot{padding:16px 20px}
+}
+.reduce *,.reduce *::before,.reduce *::after{animation:none!important;transition:background 1.4s linear,color .2s,opacity .3s,transform .2s!important}

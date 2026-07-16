@@ -575,6 +575,14 @@ class DraaiTests(unittest.TestCase):
         # left channel is much louder than right
         self.assertGreater(sum(d["ampL"]), sum(d["ampR"]) * 3)
 
+    def test_ui_assembles(self):
+        from draai.ui import assemble_ui
+        html = assemble_ui(os.path.join(ROOT, "ui"))
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype html"))
+        self.assertIn("</html>", html)
+        for marker in ('id="np"', 'id="amp"', 'function tick', 'function boot', '--ac:'):
+            self.assertIn(marker, html)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

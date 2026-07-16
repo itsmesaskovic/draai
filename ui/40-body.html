@@ -1,0 +1,100 @@
+</style>
+</head>
+<body>
+
+<div id="bgwrap"><b class="g1"></b><b class="g2"></b></div>
+
+<div id="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="mark"></div>
+      <div><h1>DRAAI</h1><p>YOUR LIBRARY · YOUR NETWORK</p></div>
+      <span class="badge hidden" id="demoBadge">DEMO</span>
+    </div>
+
+    <div class="stack">
+      <div class="seclabel">Rooms<button id="rescanBtn">Rescan</button></div>
+      <div class="stack" id="roomList"></div>
+      <div class="minirow">
+        <div class="field" style="flex:1"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"></path></svg><input id="ipInput" placeholder="Add speaker by IP" spellcheck="false"></div>
+        <button class="btn" id="addIpBtn">Add</button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="seclabel">Library<button id="rescanLibBtn" title="Rescan all folders">Rescan</button></div>
+      <div class="stack" id="folderChips"></div>
+      <button class="btn" id="addFolderBtn" style="width:100%">＋ Add folder…</button>
+    </div>
+
+    <div class="stack" id="plSection" style="display:none">
+      <div class="seclabel">Playlists</div>
+      <div class="stack" id="plList"></div>
+    </div>
+
+    <div class="stack" id="ytSection">
+      <div class="seclabel">Import via yt-dlp</div>
+      <div class="minirow">
+        <div class="field" style="flex:1"><svg class="ic" viewBox="0 0 24 24"><path d="M10 15l5-3-5-3zM3 12a9 9 0 1 1 18 0 9 9 0 0 1-18 0z"></path></svg><input id="ytInput" placeholder="Paste a link" spellcheck="false"></div>
+        <button class="btn acc" id="ytBtn">Get</button>
+      </div>
+      <div id="ytJobs"></div>
+    </div>
+
+    <div class="foot"><span class="cnt" id="trackCount">— tracks</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div class="search">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input id="searchInput" placeholder="Search songs, artists, albums…" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="segmented">
+        <button class="seg on" data-view="albums">Albums</button>
+        <button class="seg" data-view="tracks">Songs</button>
+        <button class="seg" data-view="queue">Queue<span class="qn" id="qCount"></span></button>
+      </div>
+    </div>
+    <div class="scroll" id="content"></div>
+  </main>
+
+  <footer class="dock">
+    <div class="npnow">
+      <div class="cover" id="dockCover"><img id="dockArt" alt=""></div>
+      <div class="ninfo"><b id="dockTitle">Nothing playing</b><small id="dockSpeaker">Pick a room to begin</small></div>
+    </div>
+    <div class="center">
+      <div class="ctrls">
+        <button class="cbtn" id="shufBtn" title="Shuffle"><svg class="ic" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"></path></svg></button>
+        <button class="cbtn" data-cmd="prev" title="Previous"><svg class="ic fill" viewBox="0 0 24 24"><rect x="5" y="5" width="2.3" height="14" rx="1"></rect><path d="M20 6v12a1 1 0 0 1-1.6.8L9 12l9.4-6.8A1 1 0 0 1 20 6z"></path></svg></button>
+        <button class="play" id="playBtn"><svg class="ic" id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg></button>
+        <button class="cbtn" data-cmd="next" title="Next"><svg class="ic fill" viewBox="0 0 24 24"><path d="M4 6v12a1 1 0 0 0 1.6.8L15 12 5.6 5.2A1 1 0 0 0 4 6z"></path><rect x="16.7" y="5" width="2.3" height="14" rx="1"></rect></svg></button>
+        <button class="cbtn" id="expandBtn" title="Full screen"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"></path></svg></button>
+        <button class="cbtn" id="ampBtn" title="Amplifier (A)"><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="8" cy="12" r="2.4"></circle><circle cx="16" cy="12" r="2.4"></circle></svg></button>
+      </div>
+      <div class="seekwrap">
+        <span class="t mono" id="posLabel">0:00</span>
+        <div class="wave" id="dockWave"><canvas></canvas></div>
+        <span class="t r mono" id="durLabel">0:00</span>
+      </div>
+    </div>
+    <div class="right">
+      <button class="cbtn" id="themeBtn" title="Theme"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"></path></svg></button>
+      <button class="cbtn" id="sleepBtn" title="Sleep timer"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path></svg></button>
+      <button class="cbtn" id="eqBtn" title="Equalizer"><svg class="ic" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg></button>
+      <div class="vol">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"></path></svg>
+        <input type="range" class="slider" id="volSlider" min="0" max="100" value="30">
+      </div>
+    </div>
+  </footer>
+</div>
+
+<div id="selBar"><b id="selCount">0 selected</b>
+  <button class="btn" id="selPlay">Play</button>
+  <button class="btn" id="selNext">Play next</button>
+  <button class="btn" id="selAdd">Add to queue</button>
+  <button class="btn" id="selClear">✕</button>
+</div>
+

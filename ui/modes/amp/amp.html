@@ -1,0 +1,55 @@
+<!-- amplifier mode (Onkyo-style twin VU) — desktop showpiece, always dark -->
+<section class="amp" id="amp">
+  <div class="amphead">
+    <div class="brandplate"><span class="lampdot"></span>DRAAI<span class="mk">M-1</span></div>
+    <div class="lbl">STEREO POWER AMPLIFIER</div>
+    <button class="iconbtn" id="ampToNp" title="Now playing view (F)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.6"></circle></svg></button>
+    <button class="iconbtn" id="ampClose" title="Close (Esc)"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"></path></svg></button>
+  </div>
+  <div class="chassis">
+    <div class="faceplate">
+      <div class="screws"><i></i><i></i><i></i><i></i></div>
+      <div class="meterglass">
+        <div class="metercase">
+          <div class="metertitle">LEFT<span>dB / VU</span></div>
+          <canvas id="vuL"></canvas>
+          <div class="peaklamp" id="peakL">PEAK</div>
+        </div>
+        <div class="metercase">
+          <div class="metertitle">RIGHT<span>dB / VU</span></div>
+          <canvas id="vuR"></canvas>
+          <div class="peaklamp" id="peakR">PEAK</div>
+        </div>
+        <div class="glare"></div>
+      </div>
+      <div class="controls">
+        <div class="knobwrap">
+          <div class="knob" id="knobSrc"><span class="ind"></span></div>
+          <div class="knoblab">SOURCE</div>
+          <div class="knobval mono" id="srcVal">—</div>
+        </div>
+        <div class="vumeta">
+          <div class="track"><b id="ampTitle">Nothing playing</b><small id="ampArtist"></small></div>
+          <div class="ampseek"><div class="wave" id="ampWave"><canvas></canvas></div>
+            <div class="nprow"><span class="t mono" id="ampPos">0:00</span><span class="t mono" id="ampDur">0:00</span></div></div>
+          <div class="ampctrls">
+            <button class="cbtn" data-cmd="prev"><svg class="ic fill" viewBox="0 0 24 24"><rect x="5" y="5" width="2.3" height="14" rx="1"></rect><path d="M20 6v12a1 1 0 0 1-1.6.8L9 12l9.4-6.8A1 1 0 0 1 20 6z"></path></svg></button>
+            <button class="play" id="ampPlay"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg></button>
+            <button class="cbtn" data-cmd="next"><svg class="ic fill" viewBox="0 0 24 24"><path d="M4 6v12a1 1 0 0 0 1.6.8L15 12 5.6 5.2A1 1 0 0 0 4 6z"></path><rect x="16.7" y="5" width="2.3" height="14" rx="1"></rect></svg></button>
+          </div>
+        </div>
+        <div class="knobwrap">
+          <div class="knob big" id="knobVol"><span class="ind"></span></div>
+          <div class="knoblab">VOLUME</div>
+          <div class="knobval mono" id="volVal">30</div>
+        </div>
+      </div>
+      <div class="switchrow">
+        <button class="tglbtn on" id="lampToggle"><span class="led"></span>METER LAMP</button>
+        <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="powerlab">POWER · <span id="ampSpeaker">—</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+

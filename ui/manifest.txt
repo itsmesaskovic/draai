@@ -1,0 +1,15 @@
+# ui assembly manifest — one partial path per line, in assembly order
+00-head.html
+css/10-base.css
+css/20-chrome.css
+css/30-fullscreen.css
+modes/amp/amp.css
+css/40-theme.css
+css/49-responsive.css
+40-body.html
+modes/np/np.html
+modes/amp/amp.html
+59-popovers.html
+70-script.html
+modes/amp/amp.js
+90-boot.html
