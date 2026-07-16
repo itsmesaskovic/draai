@@ -2,7 +2,7 @@
 
 DRAAI plays local music on Sonos / IKEA Symfonisk and Google Cast /
 Chromecast speakers. One dependency-free Python engine (the `draai/` package)
-+ one self-contained HTML interface. Currently at v2.2.0, live at
++ one self-contained HTML interface. Currently at v2.3.0, live at
 github.com/itsmesaskovic/draai.
 
 Deep per-domain references for agents live in `docs/technical/` (architecture,
@@ -43,10 +43,12 @@ are the full story.
 - Track identity = first 16 hex chars of sha1(file path). Media URLs embed
   it; `GetPositionInfo`'s TrackURI is parsed back to a track id — this is
   how now-playing highlighting and resume work. Don't break URL shape.
-- Analysis (needs ffmpeg): streamed decode → 100ms loudness envelope +
-  low/mid/high bands, cached as JSON in
-  ~/Library/Application Support/SonosMP3Player/analysis/ with a version
-  field `v` (`ANALYSIS_VERSION`) — bump it to invalidate all caches.
+- Analysis (needs ffmpeg): streamed decode → 30ms loudness envelope
+  (`amp` + mono `low/mid/high` bands + per-channel stereo `ampL`/`ampR`),
+  cached as JSON in ~/Library/Application Support/SonosMP3Player/analysis/
+  with a version field `v` (`ANALYSIS_VERSION`) — bump it to invalidate all
+  caches. The amp VU meters read `ampL`/`ampR`; the background/waveform read
+  the mono bands.
 - Resume: positions of tracks >10 min stored in positions.json, seek on
   play. UI prefs (theme/group/sort) live in config.json under "ui".
 
