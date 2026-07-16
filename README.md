@@ -23,48 +23,45 @@ No Sonos account. No internet needed. Nothing leaves your home network.
 
 ## What it looks like
 
-*(Screenshots show a demo library with generated artwork.)*
+*(A demo library with generated artwork — click any shot to open it full size.)*
 
-Calm and consistent: one fixed teal accent, album-art thumbnails on every
-row, and folder/artist groups you can collapse. It follows your macOS
-light/dark setting — one click to override.
+Calm and consistent: one fixed teal accent, album-art thumbnails on every row,
+and folder/artist groups you can collapse. It follows your macOS light/dark
+setting — one click to override. The full-screen now-playing view (the ⛶ icon)
+takes its colours from the album art and spins into a vinyl deck; press `A` for
+twin VU meters or `S` for a spectrum analyzer — both modeled from the track's
+audio analysis, never a fake signal.
 
-![DRAAI home, dark theme](docs/images/dark-home.png)
+<table>
+  <tr>
+    <td width="50%"><a href="docs/images/dark-home.png"><img src="docs/images/dark-home.png" alt="Home, dark theme"></a><br><sub><b>Home</b> · dark theme</sub></td>
+    <td width="50%"><a href="docs/images/light.jpg"><img src="docs/images/light.jpg" alt="Home, light theme"></a><br><sub><b>Home</b> · light theme</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="docs/images/default-playing.png"><img src="docs/images/default-playing.png" alt="Full-screen now playing"></a><br><sub><b>Full-screen now playing</b> · coloured by the art</sub></td>
+    <td width="50%"><a href="docs/images/turntable-playing.png"><img src="docs/images/turntable-playing.png" alt="Vinyl deck"></a><br><sub><b>Vinyl deck</b> · your artwork as the label</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="docs/images/vu-meter.jpg"><img src="docs/images/vu-meter.jpg" alt="Amplifier — twin VU meters"></a><br><sub><b>Amplifier</b> · twin VU meters (<code>A</code>)</sub></td>
+    <td width="50%"><a href="docs/images/fft-meter.jpg"><img src="docs/images/fft-meter.jpg" alt="Spectrum analyzer"></a><br><sub><b>Spectrum</b> · analyzer (<code>S</code>)</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="docs/images/songs-grouped-by-folder.png"><img src="docs/images/songs-grouped-by-folder.png" alt="Songs grouped by folder"></a><br><sub><b>Library</b> · grouped by folder</sub></td>
+    <td width="50%"><a href="docs/images/queue.png"><img src="docs/images/queue.png" alt="The queue"></a><br><sub><b>Queue</b> · drag to reorder, play next</sub></td>
+  </tr>
+</table>
 
-![DRAAI in light theme](docs/images/light.jpg)
+**Control it from your phone** — a QR code in the sidebar opens a slim remote on
+any phone on your Wi-Fi: what's playing, transport, the queue (reorder, remove,
+play next), and browse-and-add from your whole library.
 
-**Full-screen now playing** — the ⛶ icon opens a cinematic view coloured by
-the album art; the record icon at the top spins it into a vinyl deck with
-your artwork as the label.
-
-![Full-screen now playing](docs/images/default-playing.png)
-
-![Vinyl deck](docs/images/turntable-playing.png)
-
-**Full-screen visualizers** — press `A` for vintage twin VU meters, `S` for a
-spectrum analyzer. Both are *visuals* modeled from the track's audio analysis
-(the sound plays on your speaker, never in the browser) — never a fake signal.
-
-![Amplifier — twin VU meters](docs/images/vu-meter.jpg)
-
-![Spectrum analyzer](docs/images/fft-meter.jpg)
-
-**Your library, organized** — group songs by folder or artist, sort and
-search, and manage the queue with drag-to-reorder and play-next.
-
-![Songs grouped by folder](docs/images/songs-grouped-by-folder.png)
-
-![The queue](docs/images/queue.png)
-
-**Control it from your phone** — a QR code in the sidebar opens a slim remote
-on any phone on your Wi-Fi: what's playing, transport, the queue (reorder,
-remove, play next), and browse-and-add from your whole library.
-
-<p>
-  <img src="docs/images/mobile-remote-home.jpg" alt="Phone remote — now playing" width="31%">
-  <img src="docs/images/mobile-remote-browse.jpg" alt="Phone remote — browse the library" width="31%">
-  <img src="docs/images/mobile-remote-queue.jpg" alt="Phone remote — the queue" width="31%">
-</p>
+<table>
+  <tr>
+    <td width="33%"><a href="docs/images/mobile-remote-home.jpg"><img src="docs/images/mobile-remote-home.jpg" alt="Phone remote — now playing"></a><br><sub>Now playing</sub></td>
+    <td width="33%"><a href="docs/images/mobile-remote-browse.jpg"><img src="docs/images/mobile-remote-browse.jpg" alt="Phone remote — browse the library"></a><br><sub>Browse &amp; add</sub></td>
+    <td width="33%"><a href="docs/images/mobile-remote-queue.jpg"><img src="docs/images/mobile-remote-queue.jpg" alt="Phone remote — the queue"></a><br><sub>The queue</sub></td>
+  </tr>
+</table>
 
 ## Why this exists
 
@@ -258,6 +255,37 @@ in the folder you run DRAAI from and it overrides the built-in one.
 Want to build your own? The engine exposes a simple JSON API (`/api/...`) —
 see the source — so anyone can design a front end without touching the
 engine.
+
+## Privacy & security
+
+DRAAI's privacy isn't a promise you have to trust — it's a property you can
+check. The whole app is small and dependency-free by design, so "nothing leaves
+your home network" is something the code demonstrates rather than something a
+policy asserts:
+
+- **No cloud, no account, no telemetry** — there is no analytics, no update
+  check, and no crash reporting anywhere in it.
+- **No third-party code** — the engine is pure Python standard library, with no
+  pip dependencies, ever. There's no supply chain that could read your library
+  and send it somewhere.
+- **The interface loads nothing from the internet** — no CDN, no web fonts, no
+  external scripts. It works with the internet unplugged, so there's nothing to
+  track you with.
+- **Every connection stays on your LAN** — the engine only ever talks to your
+  speakers, on your own network. The one exception is the optional yt-dlp
+  import, which uses *your* yt-dlp on a URL *you* paste.
+
+Two automated tests enforce the two rules most easily broken by a future
+change — "no pip dependency" and "the UI never phones home" — so a regression
+fails the build instead of shipping.
+
+Honest about the boundary: within your network DRAAI has **no authentication**
+— anyone on your Wi-Fi can control playback and browse your library (that's
+what makes the phone remote one-tap). Run it on a network you trust, like home
+Wi-Fi, not open public Wi-Fi. The full picture — the egress inventory, threat
+model, and how to verify it yourself — is in
+[docs/technical/security-and-privacy.md](docs/technical/security-and-privacy.md),
+and vulnerability reporting is in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 

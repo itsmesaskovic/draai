@@ -2,13 +2,13 @@
 
 DRAAI plays local music on Sonos / IKEA Symfonisk and Google Cast /
 Chromecast speakers. One dependency-free Python engine (the `draai/` package)
-+ one self-contained HTML interface. Currently at v2.5.0, live at
++ one self-contained HTML interface. Currently at v2.5.1, live at
 github.com/itsmesaskovic/draai.
 
 Deep per-domain references for agents live in `docs/technical/` (architecture,
 sonos-protocol, google-cast, http-and-media, library-and-metadata,
-audio-analysis, web-ui). The gotchas below are the quick reference; those docs
-are the full story.
+audio-analysis, web-ui, security-and-privacy). The gotchas below are the quick
+reference; those docs are the full story.
 
 ## Hard rules (do not break these)
 

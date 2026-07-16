@@ -694,6 +694,64 @@ class DraaiTests(unittest.TestCase):
         for marker in ('id="np"', 'id="amp"', 'function tick', 'function boot', '--ac:'):
             self.assertIn(marker, html)
 
+    # -- privacy / security invariants (see docs/technical/security-and-privacy.md) --
+
+    def test_engine_imports_only_stdlib(self):
+        """Supply-chain guard: the engine must import only the Python standard
+        library — no pip dependency, ever. A third-party package in the import
+        graph is exactly what could exfiltrate a user's data, so adding one must
+        turn the suite red rather than ship silently."""
+        import ast
+        pkg = os.path.dirname(draai.__file__)
+        roots = set()
+        for fn in sorted(os.listdir(pkg)):
+            if not fn.endswith(".py"):
+                continue
+            with open(os.path.join(pkg, fn), encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), fn)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for a in node.names:
+                        roots.add(a.name.split(".")[0])
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    roots.add(node.module.split(".")[0])
+        roots.discard("draai")
+        stdlib = getattr(sys, "stdlib_module_names", None)
+        offenders = []
+        for name in sorted(roots):
+            if stdlib is not None and name in stdlib:
+                continue
+            try:
+                mod = importlib.import_module(name)
+            except ImportError:
+                offenders.append(name + " (unresolvable)")
+                continue
+            path = getattr(mod, "__file__", "") or ""
+            if "site-packages" in path or "dist-packages" in path:
+                offenders.append("%s -> %s" % (name, path))
+        self.assertEqual(offenders, [], "non-stdlib imports in engine: %r" % offenders)
+
+    def test_ui_loads_nothing_from_the_internet(self):
+        """No-phone-home guard: the served UI must load nothing external — no
+        CDN, web font, script, or stylesheet — and every request it makes goes
+        to the local engine. This is what keeps 'the browser never talks to the
+        internet' true as the UI grows."""
+        import re
+        from draai.ui import assemble_ui
+        ui = assemble_ui(os.path.join(ROOT, "ui"))
+        # nothing is loaded over TLS from a remote host, and no external-asset patterns
+        self.assertNotIn("https://", ui)
+        for pat in ("@import", "<link", "<script src", "url(http", 'src="http', "src='http"):
+            self.assertNotIn(pat, ui, "external-resource pattern %r found in UI" % pat)
+        # every fetch() targets a relative URL (the local engine), never an absolute host
+        for target in re.findall(r"""fetch\(\s*[`"']([^`"']*)""", ui):
+            self.assertTrue(target.startswith("/") or target.startswith("."),
+                            "fetch() to a non-relative URL: %r" % target)
+        # the only http:// tokens permitted are XML namespaces and offline placeholders
+        for url in re.findall(r"http://[^\s\"'`)>]+", ui):
+            ok = url.startswith("http://www.w3.org/") or "draai.local" in url or "192.168." in url
+            self.assertTrue(ok, "unexpected http:// URL in UI: %r" % url)
+
     def test_root_serves_assembled_ui(self):
         httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
         port = httpd.server_address[1]

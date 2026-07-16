@@ -19,6 +19,7 @@ gotchas. These docs are the full story behind them.
 | [library-and-metadata.md](library-and-metadata.md) | Scanning folders, the hand-rolled per-format tag/art readers, search/sort/group, and the file-based integrations (yt-dlp import, m3u playlists). |
 | [audio-analysis.md](audio-analysis.md) | The optional ffmpeg waveform pipeline: loudness envelope + frequency bands, the versioned JSON cache, background analysis, graceful degradation. |
 | [web-ui.md](web-ui.md) | The single-file `player_ui.html`: token theming, the album-palette pipeline, class-collision hazards, fullscreen now-playing, media keys. |
+| [security-and-privacy.md](security-and-privacy.md) | The privacy guarantees and how they're enforced: the egress inventory, the stdlib-only / no-phone-home CI guards, the trust boundary, and how to audit it yourself. |
 
 ## Ground rules these docs assume
 
