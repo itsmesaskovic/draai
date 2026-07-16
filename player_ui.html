@@ -978,11 +978,12 @@ async function pollYt(job){ try{ const s=await api("/api/yt_status?id="+enc(job)
 }catch(e){ setTimeout(()=>pollYt(job),2000); } }
 
 /* ---------------- QR / access ---------------- */
-async function loadAccess(){ try{ const a=await api("/api/access"); A.accessUrl=a.url||""; }catch(e){ A.accessUrl=""; }
+async function loadAccess(){ try{ const a=await api("/api/access"); A.accessUrl=a.remote||a.url||""; }catch(e){ A.accessUrl=""; }
   const box=$("#qrBox");
-  if(DEMO){ box.innerHTML=""; box.appendChild(fauxQR(A.accessUrl||"http://draai.local")); return; }
+  if(DEMO){ box.innerHTML=""; box.appendChild(fauxQR(A.accessUrl||"http://draai.local/remote")); $("#qrWrap").classList.remove("hidden"); return; }
   if(A.accessUrl){ const img=new Image(); img.onerror=()=>{ box.innerHTML=""; box.appendChild(fauxQR(A.accessUrl)); }; img.src="/api/qr.svg?text="+enc(A.accessUrl); box.innerHTML=""; box.appendChild(img); }
-  else { box.innerHTML=""; box.appendChild(fauxQR("http://draai.local")); }
+  else { box.innerHTML=""; box.appendChild(fauxQR("http://draai.local/remote")); }
+  $("#qrWrap").classList.remove("hidden");
   $("#qrWrap .cap").insertAdjacentHTML("beforeend", A.accessUrl?`<div style="margin-top:4px;font-size:11px;color:var(--dim2)" class="mono">${esc(A.accessUrl)}</div>`:"");
 }
 function fauxQR(text){ // deterministic decorative QR-style code (demo/no-endpoint fallback)

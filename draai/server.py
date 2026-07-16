@@ -450,7 +450,8 @@ class Handler(BaseHTTPRequestHandler):
                 ip = local_ip_facing(sp or "8.8.8.8")
             except Exception:
                 ip = "127.0.0.1"
-            self.send_json({"url": "http://%s:%d" % (ip, state.server_port)})
+            base = "http://%s:%d" % (ip, state.server_port)
+            self.send_json({"url": base, "remote": base + "/remote"})
         elif path.startswith("/api/qr.svg"):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             text = qs.get("text", [""])[0][:120]
