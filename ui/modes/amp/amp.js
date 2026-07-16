@@ -3,10 +3,15 @@ let vuLc, vuRc, ampCv, vuL=0, vuR=0, peakLT=0, peakRT=0, ampLamp=true;
 function mkCv(id){ const cv=document.getElementById(id); return {cv,ctx:cv.getContext("2d")}; }
 function sizeCv(o){ if(!o||!o.cv) return; const r=o.cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
   o.cv.width=Math.max(1,r.width*dpr); o.cv.height=Math.max(1,r.height*dpr); o.ctx.setTransform(dpr,0,0,dpr,0,0); o.W=r.width; o.H=r.height; }
-function openAmp(){ $("#np").classList.remove("open"); $("#amp").classList.add("open"); $("#amp").classList.toggle("lampon",ampLamp);
-  requestAnimationFrame(()=>{ sizeCv(vuLc); sizeCv(vuRc); if(ampCv) sizeCanvas(ampCv); }); }
+const FS_IDS=["np","amp"];   // spectrum will append "spec" next task
+function openMode(id, sizers){
+  FS_IDS.forEach(x=>$("#"+x).classList.remove("open"));
+  $("#"+id).classList.add("open");
+  requestAnimationFrame(()=>{ (sizers||[]).forEach(s=>s()); });
+}
+function openNp(){ openMode("np",[()=>sizeCanvas(npCv)]); armIdle(); loadAccess(); }
+function openAmp(){ $("#amp").classList.toggle("lampon",ampLamp); openMode("amp",[()=>sizeCv(vuLc),()=>sizeCv(vuRc),()=>sizeCanvas(ampCv)]); }
 function closeAmp(){ $("#amp").classList.remove("open"); }
-function openNp(){ $("#amp").classList.remove("open"); $("#np").classList.add("open"); requestAnimationFrame(()=>sizeCanvas(npCv)); armIdle(); loadAccess(); }
 /* ---- amp meter tuning (A/B/C) ---- */
 const VU_LATENCY = 0.0;    // s — meter energy read offset vs the clock (C2); room-align knob, 0 = off
 const SYNC_NUDGE = 0.25;   // fraction of sub-threshold drift corrected per poll (C1)
