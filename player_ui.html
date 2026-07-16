@@ -876,6 +876,7 @@ function sizeCv(o){ if(!o||!o.cv) return; const r=o.cv.getBoundingClientRect(), 
 function openAmp(){ $("#np").classList.remove("open"); $("#amp").classList.add("open"); $("#amp").classList.toggle("lampon",ampLamp);
   requestAnimationFrame(()=>{ sizeCv(vuLc); sizeCv(vuRc); if(ampCv) sizeCanvas(ampCv); }); }
 function closeAmp(){ $("#amp").classList.remove("open"); }
+function openNp(){ $("#amp").classList.remove("open"); $("#np").classList.add("open"); requestAnimationFrame(()=>sizeCanvas(npCv)); armIdle(); loadAccess(); }
 function drawAmp(dt,t,prog){
   const eAmp=playing?sm.amp:0, eLow=playing?sm.low:0, eHigh=playing?sm.high:0;
   // classic L/R stereo pair: both track overall level, gently decorrelated for life
@@ -915,16 +916,16 @@ function drawVU(o,val){ if(!o||!o.W){ if(o) sizeCv(o); if(!o||!o.W) return; } co
   const ang=a0+(a1-a0)*clamp(val,0,1.06);
   ctx.strokeStyle="#1a1206"; ctx.lineWidth=2; ctx.lineCap="round"; ctx.beginPath();
   ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(ang)*(R+4),cy+Math.sin(ang)*(R+4)); ctx.stroke();
-  ctx.fillStyle="#1a1206"; ctx.beginPath(); ctx.arc(cx,cy,5,0,7); ctx.fill();
+  ctx.fillStyle="#1a1206"; ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fill();
 }
 let knobDrag=false;
 function setKnob(el,v,min,max){ const f=(v-min)/(max-min||1); el.style.setProperty("--rot",(-140+f*280)+"deg"); }
 function wireKnob(el,get,set){
-  const range=280, sens=0.7;
+  const sens=0.7;
   const start=e=>{ knobDrag=true; const y0=(e.touches?e.touches[0]:e).clientY, v0=get();
     const move=ev=>{ const y=(ev.touches?ev.touches[0]:ev).clientY; set(v0+(y0-y)*sens); ev.preventDefault(); };
-    const up=()=>{ knobDrag=false; removeEventListener("pointermove",move); removeEventListener("pointerup",up); };
-    addEventListener("pointermove",move); addEventListener("pointerup",up); };
+    const up=()=>{ knobDrag=false; removeEventListener("pointermove",move); removeEventListener("pointerup",up); removeEventListener("pointercancel",up); };
+    addEventListener("pointermove",move); addEventListener("pointerup",up); addEventListener("pointercancel",up); };
   el.addEventListener("pointerdown",start);
   el.addEventListener("wheel",e=>{ set(get()+(e.deltaY<0?2:-2)); e.preventDefault(); },{passive:false});
 }
@@ -1247,13 +1248,13 @@ function wire(){
     posSec=clamp((e.clientX-r.left)/r.width,0,1)*durSec;
     cmd("seek",Math.round(posSec)); }));
   // fullscreen
-  $("#expandBtn").addEventListener("click",()=>{ $("#np").classList.add("open"); sizeCanvas(npCv); armIdle(); loadAccess(); });
+  $("#expandBtn").addEventListener("click",openNp);
   $("#npClose").addEventListener("click",()=>{ $("#np").classList.remove("open"); clearTimeout(idleT); });
   $("#np").addEventListener("mousemove",armIdle); $("#np").addEventListener("touchstart",armIdle,{passive:true});
   // amplifier mode
   $("#ampBtn").addEventListener("click",openAmp);
   $("#npToAmp").addEventListener("click",openAmp);
-  $("#ampToNp").addEventListener("click",()=>{ closeAmp(); $("#np").classList.add("open"); requestAnimationFrame(()=>sizeCanvas(npCv)); });
+  $("#ampToNp").addEventListener("click",openNp);
   $("#ampClose").addEventListener("click",closeAmp);
   $("#lampToggle").addEventListener("click",()=>{ ampLamp=!ampLamp; $("#lampToggle").classList.toggle("on",ampLamp); $("#amp").classList.toggle("lampon",ampLamp); });
   // popovers
@@ -1284,7 +1285,7 @@ function wire(){
     if(e.code==="Space"){ e.preventDefault(); cmd(A.status.state==="PLAYING"?"pause":"resume"); }
     else if(e.key==="ArrowRight"&&e.shiftKey)cmd("next"); else if(e.key==="ArrowLeft"&&e.shiftKey)cmd("prev");
     else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $$(".pop").forEach(p=>p.classList.remove("open")); }
-    else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")){ closeAmp(); $("#np").classList.add("open"); requestAnimationFrame(()=>sizeCanvas(npCv)); } else $("#expandBtn").click(); }
+    else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")){ openNp(); } else $("#expandBtn").click(); }
     else if(e.key==="a"||e.key==="A"){ if($("#amp").classList.contains("open")) closeAmp(); else openAmp(); } });
   addEventListener("resize",()=>{ sizeCanvas(dockCv); if($("#np").classList.contains("open"))sizeCanvas(npCv);
     if($("#amp").classList.contains("open")){ sizeCv(vuLc); sizeCv(vuRc); sizeCanvas(ampCv); } });
