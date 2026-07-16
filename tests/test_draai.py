@@ -553,6 +553,24 @@ class DraaiTests(unittest.TestCase):
             sp.cast_sessions.pop(ip, None); sp.cast_queues.pop(ip, None)
             for k in (a, b, "c" * 16): sp.tracks_by_id.pop(k, None)
 
+    @unittest.skipUnless(sp.find_tool("ffmpeg"), "ffmpeg not installed")
+    def test_stereo_analysis_channels(self):
+        import wave, struct
+        path = os.path.join(self.tmp, "pan.wav")
+        sr, n = 8000, 8000  # 1 second
+        with wave.open(path, "wb") as w:
+            w.setnchannels(2); w.setsampwidth(2); w.setframerate(sr)
+            frames = b"".join(struct.pack("<hh", 30000, 2000) for _ in range(n))  # L loud, R quiet
+            w.writeframes(frames)
+        d = sp._analyze({"id": "pan", "path": path})
+        self.assertEqual(d["step"], 0.03)
+        self.assertIn("ampL", d); self.assertIn("ampR", d)
+        self.assertEqual(len(d["ampL"]), len(d["amp"]))
+        self.assertEqual(len(d["ampR"]), len(d["amp"]))
+        self.assertLessEqual(len(d["peaks"]), 240)
+        # left channel is much louder than right
+        self.assertGreater(sum(d["ampL"]), sum(d["ampR"]) * 3)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

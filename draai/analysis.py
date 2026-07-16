@@ -11,9 +11,9 @@ from draai.state import tracks_by_id, state_lock
 
 ANALYSIS_DIR = os.path.join(CONFIG_DIR, "analysis")
 ANALYSIS_SR = 8000
-ANALYSIS_STEP = 0.1          # seconds per frame
+ANALYSIS_STEP = 0.03         # seconds per frame (was 0.1 — finer transients)
 ANALYSIS_MAX_SEC = 43200     # analyze up to 12 hours of audio
-ANALYSIS_VERSION = 2         # bump to invalidate older (25-min-capped) caches
+ANALYSIS_VERSION = 3         # bump to invalidate older caches (finer + stereo)
 PEAK_BUCKETS = 240
 
 analysis_state = {}          # id -> "pending" | "error:<msg>"
@@ -65,15 +65,58 @@ def _stream_envelope(ffmpeg, path, afilter=None):
     return out
 
 
+def _stream_envelope_stereo(ffmpeg, path):
+    """Decode STEREO and reduce to per-channel max-abs envelopes, streaming.
+
+    Same constant-memory approach as _stream_envelope, but keeps both
+    channels: s16le stereo is interleaved L,R,L,R... so per window the
+    even int16s are left, the odd are right.
+    """
+    import array
+    cmd = [ffmpeg, "-v", "error", "-t", str(ANALYSIS_MAX_SEC), "-i", path,
+           "-ac", "2", "-ar", str(ANALYSIS_SR), "-f", "s16le", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
+    win_bytes = int(ANALYSIS_SR * ANALYSIS_STEP) * 2 * 2   # frames * 2ch * 2 bytes
+    outL, outR, buf = [], [], b""
+    try:
+        while True:
+            chunk = proc.stdout.read(1 << 16)
+            if not chunk:
+                break
+            buf += chunk
+            while len(buf) >= win_bytes:
+                seg, buf = buf[:win_bytes], buf[win_bytes:]
+                a = array.array("h")
+                a.frombytes(seg)
+                if sys.byteorder == "big":
+                    a.byteswap()
+                left, right = a[0::2], a[1::2]
+                outL.append(max(max(left), -min(left), 1))
+                outR.append(max(max(right), -min(right), 1))
+    finally:
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        proc.wait()
+    if not outL:
+        raise RuntimeError("could not decode audio")
+    return outL, outR
+
+
 def _analyze(track):
     tid = track["id"]
     try:
         ffmpeg = find_tool("ffmpeg")
         if not ffmpeg:
             raise RuntimeError("ffmpeg is not installed (brew install ffmpeg)")
-        raw_amp = _stream_envelope(ffmpeg, track["path"])
+        raw_L, raw_R = _stream_envelope_stereo(ffmpeg, track["path"])
+        raw_amp = [l if l >= r else r for l, r in zip(raw_L, raw_R)]  # mono peak = per-window max(L,R)
         peak = max(raw_amp) if raw_amp else 1
         amp = _scale(raw_amp, peak)
+        ampL = _scale(raw_L, peak)     # per-channel, scaled to the same full-band peak
+        ampR = _scale(raw_R, peak)
         # bands share the full-band peak so relative loudness is preserved
         low = _scale(_stream_envelope(ffmpeg, track["path"],
                                       "lowpass=f=250"), peak)
@@ -96,12 +139,14 @@ def _analyze(track):
             "step": ANALYSIS_STEP,
             "peaks": peaks,
             "amp": amp, "low": low, "mid": mid[:frames], "high": high[:frames],
+            "ampL": ampL[:frames], "ampR": ampR[:frames],
         }
         os.makedirs(ANALYSIS_DIR, exist_ok=True)
         with open(os.path.join(ANALYSIS_DIR, tid + ".json"), "w") as f:
             json.dump(data, f)
         with analysis_lock:
             analysis_state.pop(tid, None)
+        return data
     except Exception as e:
         with analysis_lock:
             analysis_state[tid] = "error:%s" % e
