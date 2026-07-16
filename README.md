@@ -8,31 +8,26 @@ with no cloud, no account, and no subscription.**
 You have a folder of mp3s. You have a Sonos (or IKEA Symfonisk, which is
 Sonos inside) speaker. Getting the first to play on the second should be
 easy, and somehow every app that promises it is broken, paywalled, or both.
-This is a single-file app that fixes that. It runs on your Mac, finds your
-speakers on your Wi-Fi, and streams your files to them directly — bit-perfect,
-at whatever quality your files are (320 kbps mp3s, lossless FLAC, all of it).
+This is a tiny, dependency-free app that fixes that — pure Python standard
+library, and you can even run it as one downloadable file (`draai.pyz`). It
+runs on your Mac, finds your speakers on your Wi-Fi, and streams your files to
+them directly — bit-perfect, at whatever quality your files are (320 kbps
+mp3s, lossless FLAC, all of it).
 
 No Sonos account. No internet needed. Nothing leaves your home network.
 
 ## What it looks like
 
-*(Screenshots show a demo library with generated artwork.)*
+*(Screenshot shows a demo library with generated artwork.)*
 
-![The library, themed by the artwork of whatever is playing](docs/library.png)
+![DRAAI in its light theme](docs/light.png)
 
-The interface takes its colors from the cover art of the playing track —
-every album gives the whole app a different mood. Below: the full-screen
-now-playing view, and the vinyl deck (click the record icon, top of the
-full-screen view).
-
-![Full-screen now playing](docs/nowplaying.png)
-
-![The vinyl deck view](docs/vinyl.png)
-
-![Light theme](docs/light.png)
-
-There's a light theme too — it follows your macOS setting and keeps the
-album-driven colors.
+The interface is calm and consistent: one fixed accent (a soft teal),
+album-art thumbnails on every row, and folder/artist groups you can
+collapse. It follows your macOS light/dark setting, one click to override.
+The full-screen now-playing view (the ⛶ icon in the player bar) still takes
+its color from the album art, and the record icon at the top of it switches
+to a spinning vinyl deck with your artwork as the label.
 
 ## Why this exists
 
@@ -77,12 +72,12 @@ worked out of the box.
 
    ```
    cd ~/Downloads/draai-main   # or wherever you unpacked it
-   python3 sonos_player.py
+   python3 -m draai
    ```
 
-   Not sure about the path? Type `python3 `, **with a space after it**, drag
-   `sonos_player.py` from the folder into the Terminal window, press Enter —
-   same thing.
+   Prefer a single file? Download **`draai.pyz`** from the latest release
+   and just run `python3 draai.pyz` from anywhere — no unzipping, still no
+   install and no dependencies.
 
 ### What happens next
 
@@ -93,9 +88,9 @@ worked out of the box.
   new network can take a moment — there's a Rescan button).
 - Under **Library**, click **＋ Add folder…** and pick your music folder.
   Your songs appear instantly; albums with embedded artwork get covers.
-- Click a song. It plays on the speaker, and the whole interface takes on
-  the colors of the album art. Click the ⛶ icon in the player bar for the
-  full-screen view; the record icon at the top switches to the vinyl deck.
+- Click a song and it plays on the speaker. Click the ⛶ icon in the player
+  bar for the full-screen now-playing view — that view takes on the album's
+  colors, and the record icon at its top switches to the vinyl deck.
 
 Two things may happen on first run, both normal and both one-time:
 
@@ -125,7 +120,7 @@ at a time, waiting for me to confirm each step worked before the next.
 The steps: (1) download the ZIP from the GitHub page (green "Code"
 button, no account needed) and unzip it; (2) open Terminal, cd into the
 unzipped folder (usually ~/Downloads/draai-main) and run:
-python3 sonos_player.py
+python3 -m draai
 (3) if macOS offers to install "command line developer tools", I should
 accept and wait, then run the command again; (4) if macOS asks whether
 Python may accept incoming network connections, I click Allow; (5) a
@@ -134,8 +129,7 @@ and add my music folder under Library; (6) if no speakers appear, check
 I'm on the same Wi-Fi as the speakers, press Rescan, or add the speaker
 by its IP address (shown in the Sonos app under Settings > System >
 About My System); (7) only if I want extras: "brew install ffmpeg"
-enables the waveform visuals, and "python3 sonos_player.py
---install-autostart" makes it start automatically at login.
+enables the waveform visuals, and "python3 -m draai --install-autostart" makes it start automatically at login.
 
 If anything fails, ask me to paste the exact Terminal output and help me
 fix it before moving on.
@@ -183,7 +177,7 @@ Without it, the app works fine — those visuals simply stay off.
 To have DRAAI always running in the background — no Terminal window:
 
 ```
-python3 sonos_player.py --install-autostart
+python3 -m draai --install-autostart
 ```
 
 Then just open http://localhost:8765 whenever you want music.
@@ -209,12 +203,12 @@ alone.
 
 ## The interface
 
-The player is two parts: an engine (`sonos_player.py`) and an interface.
-A basic interface is built into the engine, but this repository also ships
-**the DRAAI interface** (`player_ui.html`) — a far nicer one, with album-art-driven
-colors, a synced visualizer, a full-screen mode, and guest access. Put
-`player_ui.html` in the same folder as `sonos_player.py` and it loads
-automatically. Delete it (or rename it) to fall back to the basic interface.
+The player is two parts: an engine (the `draai` package, run with `python3 -m
+draai` or the single-file `draai.pyz`) and an interface. A basic interface is
+built in, but DRAAI ships **the full interface** (`player_ui.html`) — a far
+nicer one, with a synced visualizer, a full-screen mode, and guest access —
+bundled inside the package. To tweak it live, drop your own `player_ui.html`
+in the folder you run DRAAI from and it overrides the built-in one.
 
 Want to build your own? The engine exposes a simple JSON API (`/api/...`) —
 see the source — so anyone can design a front end without touching the
@@ -222,10 +216,11 @@ engine.
 
 ## Contributing
 
-The engine is deliberately a single file — that's the distribution story
-(download one file, run it), so please keep changes inside it rather than
-splitting it into modules. The test suite needs no speakers, network, or
-ffmpeg:
+The engine is the `draai/` package — pure Python standard library, no pip
+dependencies, ever. Keep the import graph clean (`state`/`constants` are
+leaves; `server`/`__main__` are the roots) and run `python3 build.py` to
+bundle it — package plus web UI — into the single distributable `draai.pyz`.
+The test suite needs no speakers, network, or ffmpeg:
 
 ```
 python3 tests/test_draai.py

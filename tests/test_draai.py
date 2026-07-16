@@ -20,13 +20,27 @@ import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENGINE = os.path.join(HERE, "..", "sonos_player.py")
-if not os.path.isfile(ENGINE):
-    ENGINE = os.path.join(HERE, "sonos_player.py")   # flat layout fallback
+ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, ROOT)                    # so `import draai` (the package) resolves
 
-spec = importlib.util.spec_from_file_location("draai", ENGINE)
-sp = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(sp)
+import types
+import draai
+import draai.state, draai.constants, draai.util, draai.config, draai.media
+import draai.library, draai.analysis, draai.youtube, draai.cast
+import draai.backends, draai.playlists, draai.server
+
+# `sp` = a flat namespace of the package's public API for the tests' sp.<name>
+# reads/calls. Function MOCKS are patched on the real module they live in
+# (e.g. draai.backends.soap_call), since that's where the callers resolve them.
+sp = types.SimpleNamespace(__version__=draai.__version__)
+for _m in (draai.state, draai.constants, draai.util, draai.config, draai.media,
+           draai.library, draai.analysis, draai.youtube, draai.cast,
+           draai.backends, draai.playlists, draai.server):
+    for _n in dir(_m):
+        if not _n.startswith("__"):
+            setattr(sp, _n, getattr(_m, _n))
+import http.server
+sp.ThreadingHTTPServer = http.server.ThreadingHTTPServer   # for the live-server API test
 
 
 # ----------------------------------------------------------------------------
@@ -146,9 +160,9 @@ class DraaiTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.soap = SoapMock()
-        sp.soap_call = self.soap
-        sp.ssdp_discover = lambda timeout=3.0: {"192.168.1.50"}
-        sp.cast_discover = lambda timeout=4.0: []
+        draai.backends.soap_call = self.soap
+        draai.backends.ssdp_discover = lambda timeout=3.0: {"192.168.1.50"}
+        draai.backends.cast_discover = lambda timeout=4.0: []
         sp.config["folders"] = [self.tmp]
         sp.config["manual_ips"] = []
 
@@ -419,12 +433,12 @@ class DraaiTests(unittest.TestCase):
         self.assertEqual(fired, [1])
 
     def test_backend_field_and_merge(self):
-        orig = (sp.ssdp_discover, sp.get_zone_groups, sp.cast_discover)
+        orig = (draai.backends.ssdp_discover, draai.backends.get_zone_groups, draai.backends.cast_discover)
         try:
-            sp.ssdp_discover = lambda: {"10.0.0.5"}
-            sp.get_zone_groups = lambda ip: [{"uuid": "RINCON_x", "name": "Living",
+            draai.backends.ssdp_discover = lambda: {"10.0.0.5"}
+            draai.backends.get_zone_groups = lambda ip: [{"uuid": "RINCON_x", "name": "Living",
                 "ip": "10.0.0.5", "members": [{"uuid": "RINCON_x", "name": "Living", "ip": "10.0.0.5"}]}]
-            sp.cast_discover = lambda timeout=4.0: [{"uuid": "CAST_abc", "name": "Zolder",
+            draai.backends.cast_discover = lambda timeout=4.0: [{"uuid": "CAST_abc", "name": "Zolder",
                 "ip": "10.0.0.9", "port": 8009, "backend": "cast", "is_group": False,
                 "members": [{"uuid": "CAST_abc", "name": "Zolder", "ip": "10.0.0.9"}]}]
             merged, err = sp.refresh_speakers()
@@ -432,15 +446,15 @@ class DraaiTests(unittest.TestCase):
             by = {s["uuid"]: s for s in merged}
             self.assertEqual(by["RINCON_x"]["backend"], "sonos")
             self.assertEqual(by["CAST_abc"]["backend"], "cast")
-            self.assertEqual(sp.speaker_by_uuid("CAST_abc")["backend"], "cast")
+            self.assertEqual(draai.backends.speaker_by_uuid("CAST_abc")["backend"], "cast")
         finally:
-            sp.ssdp_discover, sp.get_zone_groups, sp.cast_discover = orig
+            draai.backends.ssdp_discover, draai.backends.get_zone_groups, draai.backends.cast_discover = orig
 
     def test_no_devices_message(self):
-        orig = (sp.ssdp_discover, sp.cast_discover)
+        orig = (draai.backends.ssdp_discover, draai.backends.cast_discover)
         try:
-            sp.ssdp_discover = lambda: set()
-            sp.cast_discover = lambda timeout=4.0: []
+            draai.backends.ssdp_discover = lambda: set()
+            draai.backends.cast_discover = lambda timeout=4.0: []
             # config manual_ips may add entries; ensure empty for this assertion
             mi = sp.config.get("manual_ips")
             sp.config["manual_ips"] = []
@@ -448,7 +462,7 @@ class DraaiTests(unittest.TestCase):
             self.assertEqual(merged, [])
             self.assertIn("No speakers found", err)
         finally:
-            sp.ssdp_discover, sp.cast_discover = orig
+            draai.backends.ssdp_discover, draai.backends.cast_discover = orig
             sp.config["manual_ips"] = mi if mi is not None else []
 
     def test_cast_guard_eq_and_grouping_raise(self):
@@ -459,15 +473,15 @@ class DraaiTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             sp.set_eq(cast_spk, bass=1)
         # group_join resolves member by uuid -> make it findable as cast
-        orig = sp.speaker_by_uuid
+        orig = draai.backends.speaker_by_uuid
         try:
-            sp.speaker_by_uuid = lambda u: cast_spk if u == "CAST_x" else None
+            draai.backends.speaker_by_uuid = lambda u: cast_spk if u == "CAST_x" else None
             with self.assertRaises(RuntimeError):
                 sp.group_join("CAST_x", "CAST_y")
             with self.assertRaises(RuntimeError):
                 sp.group_leave("CAST_x")
         finally:
-            sp.speaker_by_uuid = orig
+            draai.backends.speaker_by_uuid = orig
 
     def test_cast_play_and_queue(self):
         sent = []

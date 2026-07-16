@@ -6,10 +6,13 @@ Currently at v1.2.0, live at github.com/itsmesaskovic/draai.
 
 ## Hard rules (do not break these)
 
-1. **`sonos_player.py` stays ONE file, Python stdlib ONLY.** No pip
-   imports, no splitting into modules. This is the product's distribution
-   story. Optional tools (ffmpeg, yt-dlp) are *detected* at runtime via
-   `find_tool()`, never required.
+1. **The engine is the `draai/` package, Python stdlib ONLY — no pip, ever.**
+   Run it with `python3 -m draai`; ship it as the single `draai.pyz`
+   (built by `build.py` via stdlib `zipapp`, bundles the UI too). There is
+   no `sonos_player.py`. Keep the import graph a clean DAG — `state`/
+   `constants` are leaves; `server`/`__main__` are the roots (see
+   `.ai/plans/2026-07-15-draai-package-split.md`). Optional tools (ffmpeg,
+   yt-dlp) are *detected* at runtime via `find_tool()`, never required.
 2. **`player_ui.html` stays ONE file.** All CSS/JS inline. No CDNs, no
    web fonts, no localStorage/sessionStorage (preferences persist via the
    engine: GET/POST `/api/prefs`). Must work offline.
