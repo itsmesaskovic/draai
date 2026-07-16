@@ -583,6 +583,18 @@ class DraaiTests(unittest.TestCase):
         for marker in ('id="np"', 'id="amp"', 'function tick', 'function boot', '--ac:'):
             self.assertIn(marker, html)
 
+    def test_root_serves_assembled_ui(self):
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/" % port, timeout=5) as r:
+                body = r.read().decode("utf-8")
+                self.assertIn('id="amp"', body)
+                self.assertIn("function tick", body)
+        finally:
+            httpd.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

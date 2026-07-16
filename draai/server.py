@@ -25,14 +25,21 @@ from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms
 
 
 def _load_ui():
-    """The web UI: an external player_ui.html in the cwd wins (handy for live
-    editing); else the copy embedded in the package (works inside a .pyz);
-    else the built-in PAGE fallback."""
+    """The web UI. An external player_ui.html in the cwd wins (drop-in
+    override); else assemble it from the ui/ partials in a source checkout;
+    else the copy baked into the package (.pyz); else the built-in PAGE."""
     ext = os.path.join(os.getcwd(), "player_ui.html")
     if os.path.isfile(ext):
         try:
-            with open(ext, "r", encoding="utf-8") as f:
+            with open(ext, "r", encoding="utf-8", newline="") as f:
                 return f.read()
+        except Exception:
+            pass
+    ui_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui")
+    if os.path.isdir(ui_dir):
+        try:
+            from draai.ui import assemble_ui
+            return assemble_ui(ui_dir)
         except Exception:
             pass
     try:

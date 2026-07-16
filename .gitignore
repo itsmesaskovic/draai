@@ -6,4 +6,6 @@ draai.pyz
 # build artifact: build.py injects the top-level player_ui.html into the .pyz
 draai/player_ui.html
 draai/remote.html
+# built UI: assembled from ui/ partials by draai/ui.py (dev) and build.py (.pyz)
+/player_ui.html
 .ai/

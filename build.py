@@ -21,10 +21,12 @@ def build(target="draai.pyz"):
         pkg = os.path.join(stage, "draai")
         shutil.copytree(os.path.join(HERE, "draai"), pkg,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        # keep the embedded UI in sync with the top-level source of truth
-        top_ui = os.path.join(HERE, "player_ui.html")
-        if os.path.isfile(top_ui):
-            shutil.copy(top_ui, os.path.join(pkg, "player_ui.html"))
+        # bake the UI: assemble it from ui/ partials into the package copy
+        from draai.ui import assemble_ui
+        ui_dir = os.path.join(HERE, "ui")
+        if os.path.isdir(ui_dir):
+            with open(os.path.join(pkg, "player_ui.html"), "w", encoding="utf-8", newline="") as f:
+                f.write(assemble_ui(ui_dir))
         top_remote = os.path.join(HERE, "remote.html")
         if os.path.isfile(top_remote):
             shutil.copy(top_remote, os.path.join(pkg, "remote.html"))

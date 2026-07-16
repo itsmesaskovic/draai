@@ -19,9 +19,16 @@ are the full story.
    `constants` are leaves; `server`/`__main__` are the roots (see
    `.ai/plans/2026-07-15-draai-package-split.md`). Optional tools (ffmpeg,
    yt-dlp) are *detected* at runtime via `find_tool()`, never required.
-2. **`player_ui.html` stays ONE file.** All CSS/JS inline. No CDNs, no
-   web fonts, no localStorage/sessionStorage (preferences persist via the
-   engine: GET/POST `/api/prefs`). Must work offline.
+2. **`player_ui.html` is ASSEMBLED, not hand-edited.** The served UI is
+   built from `ui/` partials (one triplet per full-screen mode + a shared
+   core) by `draai/ui.py`'s `assemble_ui()` — the engine calls it at serve
+   time (`_load_ui` in `draai/server.py`) and `build.py` calls it to bake
+   the `.pyz`. Never hand-edit a built `player_ui.html`; edit the `ui/`
+   partials instead. To the browser it's still ONE self-contained offline
+   document: all CSS/JS inline, no CDNs, no web fonts, no
+   localStorage/sessionStorage (preferences persist via the engine:
+   GET/POST `/api/prefs`), must work offline. Still overridable by
+   dropping your own `player_ui.html` in the cwd.
 3. **No cloud, no accounts, no telemetry, ever.**
 4. **No site-specific downloader code.** The yt-dlp integration hands the
    URL to the user's own yt-dlp installation; downloads land in
