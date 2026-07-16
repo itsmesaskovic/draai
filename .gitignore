@@ -5,3 +5,4 @@ __pycache__/
 draai.pyz
 # build artifact: build.py injects the top-level player_ui.html into the .pyz
 draai/player_ui.html
+.ai/
