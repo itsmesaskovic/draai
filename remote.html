@@ -160,6 +160,65 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;paddin
 const $=s=>document.querySelector(s);
 const enc=encodeURIComponent;
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hash=str=>{ let h=0; str=String(str); for(let i=0;i<str.length;i++)h=(h*31+str.charCodeAt(i))|0; return Math.abs(h); };
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let DEMO=false;
+// self-contained fake backend — mirrors ui/90-boot.html's Demo IIFE, trimmed to what the remote calls
+const Demo=(()=>{
+  const speakers0=[
+    {uuid:"Z_LIVING",name:"Living Room",ip:"192.168.1.21",members:[{uuid:"Z_LIVING",name:"Living Room",ip:"192.168.1.21",volume:32}]},
+    {uuid:"Z_KITCHEN",name:"Kitchen",ip:"192.168.1.22",members:[{uuid:"Z_KITCHEN",name:"Kitchen",ip:"192.168.1.22",volume:24}]},
+    {uuid:"Z_BED",name:"Bedroom (Symfonisk)",ip:"192.168.1.23",members:[{uuid:"Z_BED",name:"Bedroom",ip:"192.168.1.23",volume:18}]},
+  ];
+  let speakers=JSON.parse(JSON.stringify(speakers0));
+  const albums=[
+    ["Vaelo","Neon Meridian",190,["Meridian","Glass Arcade","Low Orbit","Cassette Sun","Nightform","Parallax","Afterglow"]],
+    ["Marisa Quon","Slow Tide",210,["Slow Tide","Harbor Lights","Paper Boats","Undertow","Salt & Static","Low Country"]],
+    ["Kessler","Concrete Garden",150,["Concrete Garden","Rooftop Rain","Ivy & Rebar","Static Bloom","Terrace","Grey Morning","Foundations"]],
+    ["Sable","After Hours",175,["After Hours","Velvet Room","Last Call","Neon Cab","Dawn Drive","Closing Time"]],
+  ];
+  let tracks=[], id=1;
+  function build(){ tracks=[]; id=1; for(const[ar,al,base,ts]of albums)for(const tt of ts) tracks.push({id:String(id++),title:tt,artist:ar,album:al,folder:ar+"/"+al,has_art:true,dur:base+hash(tt)%120}); }
+  build();
+  const folder="/Users/you/Music";
+  let queue=tracks.slice(0,6).map(t=>t.id), qidx=1, state="PLAYING", pos=48, vol=32, shuffle=false;
+  const cur=()=>tracks.find(t=>t.id===queue[qidx]);
+  setInterval(()=>{ if(state!=="PLAYING"||!queue.length)return; const t=cur(); if(!t)return; pos++; if(pos>=t.dur){ pos=0; qidx=shuffle?(Math.random()*queue.length)|0:(qidx+1)%queue.length; } },1000);
+  const hms=s=>{ s=Math.max(0,Math.round(s)); return ((s/3600)|0)+":"+String(((s%3600/60)|0)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); };
+  // gradient artwork per track (data URL) so it renders like the real thing
+  const artC={};
+  function art(tid){ if(artC[tid])return artC[tid]; const alb=(tracks.find(t=>String(t.id)===String(tid))||{}).album||tid;
+    const h=hash(alb)%360, c=document.createElement("canvas"); c.width=c.height=320; const x=c.getContext("2d");
+    const g=x.createLinearGradient(0,0,320,320); g.addColorStop(0,`hsl(${h} 68% 54%)`); g.addColorStop(.55,`hsl(${(h+30)%360} 55% 32%)`); g.addColorStop(1,`hsl(${(h+60)%360} 45% 14%)`);
+    x.fillStyle=g; x.fillRect(0,0,320,320);
+    const rg=x.createRadialGradient(90,80,10,90,80,260); rg.addColorStop(0,`hsl(${(h+20)%360} 85% 65% / .85)`); rg.addColorStop(1,"transparent"); x.fillStyle=rg; x.fillRect(0,0,320,320);
+    let s=hash(tid)||1; const rnd=()=>{s=(s*16807)%2147483647;return (s-1)/2147483646;};
+    x.globalAlpha=.10; x.fillStyle="#fff"; for(let i=0;i<3;i++){ x.beginPath(); x.arc(rnd()*320,rnd()*320,20+rnd()*90,0,7); x.fill(); } x.globalAlpha=1;
+    return artC[tid]=c.toDataURL();
+  }
+  async function route(path,body){ await new Promise(r=>setTimeout(r,70+Math.random()*120));
+    const [p,qs]=path.split("?"); const P=new URLSearchParams(qs||"");
+    switch(p){
+      case"/api/state": return {speakers:JSON.parse(JSON.stringify(speakers)),folder,track_count:tracks.length,last_speaker:speakers[0].uuid};
+      case"/api/tracks":{ const q=(P.get("q")||"").toLowerCase(); const l=tracks.filter(t=>!q||(t.title+" "+t.artist+" "+t.album).toLowerCase().includes(q)); return {tracks:l.slice(0,3000),total:l.length}; }
+      case"/api/status":{ const t=cur(); if(!t)return{state:"STOPPED",title:"",position:"0:00:00",duration:"0:00:00",volume:vol,track_no:0,track_id:null}; return {state,title:t.title,position:hms(pos),duration:hms(t.dur),volume:vol,track_no:qidx+1,track_id:t.id}; }
+      case"/api/queue": return {items:queue.map((qid,i)=>({no:i+1,id:qid,title:(tracks.find(t=>t.id===qid)||{}).title||qid})),total:queue.length};
+      case"/api/enqueue": queue.push(...body.ids); return{ok:true};
+      case"/api/queue_jump": qidx=clamp(body.no-1,0,queue.length-1); pos=0; state="PLAYING"; return{ok:true};
+      case"/api/queue_remove": if(body.no-1<qidx)qidx--; queue.splice(body.no-1,1); qidx=clamp(qidx,0,Math.max(0,queue.length-1)); return{ok:true};
+      case"/api/queue_move":{ const from=body.from-1, to=clamp(body.to-1,0,queue.length-1); const cur_id=queue[qidx];
+        const [moved]=queue.splice(from,1); queue.splice(to,0,moved); qidx=queue.indexOf(cur_id); return{ok:true}; }
+      case"/api/room_volume":{ for(const g of speakers)for(const m of (g.members||[])) if(m.uuid===body.speaker)m.volume=body.value; vol=body.value; return{ok:true}; }
+      case"/api/cmd":{ const a=body.action;
+        if(a==="pause")state="PAUSED_PLAYBACK"; else if(a==="resume")state="PLAYING";
+        else if(a==="next"){qidx=(qidx+1)%(queue.length||1);pos=0;} else if(a==="prev"){ if(pos>3)pos=0; else {qidx=(qidx-1+(queue.length||1))%(queue.length||1);pos=0;} }
+        else if(a==="volume")vol=body.value; else if(a==="seek")pos=body.value; else if(a==="shuffle")shuffle=body.value;
+        return{ok:true}; }
+      default: throw new Error("Not found: "+p);
+    }
+  }
+  return {route,art};
+})();
 // icon set — identical glyphs to the desktop player_ui.html
 const IC={
   shuffle:'<svg class="ic" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>',
@@ -177,12 +236,14 @@ const IC={
 const S={speaker:null, rooms:[], status:null, queue:[], tracks:[], trackMap:{}, tab:"now", query:""};
 
 async function api(path, body){
+  if(DEMO) return Demo.route(path, body);
   const opt = body!==undefined ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {};
   const r = await fetch(path, opt);
   const data = await r.json().catch(()=>({}));
   if(!r.ok || data.error) throw new Error(data.error || ("HTTP "+r.status));
   return data;
 }
+const artUrl=id=> DEMO ? Demo.art(id) : "/api/art?id="+enc(id);
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2600); }
 function online(ok){ $("#banner").classList.toggle("show", !ok); }
 function fill(el){ if(el) el.style.setProperty("--v",(el.value/(el.max||100)*100)+"%"); }   // colour the filled part of a slider
@@ -272,7 +333,7 @@ function updateNow(){
     _npArtId = s.track_id;
     const art = $("#npArt");
     // skip the fetch when the library map says this track has no art; onerror hides it if a fetch 404s anyway
-    if(s.track_id && (S.trackMap[s.track_id]||{}).has_art!==false){ art.src = "/api/art?id="+enc(s.track_id); art.style.display="block"; }
+    if(s.track_id && (S.trackMap[s.track_id]||{}).has_art!==false){ art.src = artUrl(s.track_id); art.style.display="block"; }
     else { art.removeAttribute("src"); art.style.display="none"; }
   }
   const seek=$("#seek");
@@ -297,7 +358,7 @@ function renderQueue(){
     const meta = S.trackMap[it.id]||{};   // pull artist from the library map when we have it
     const sub = isCur ? "Now playing" : (meta.artist || "Up next");
     const thumb = it.id
-      ? `<div class="rthumb"><img loading="lazy" src="/api/art?id=${enc(it.id)}" alt="" onerror="this.remove()"></div>`
+      ? `<div class="rthumb"><img loading="lazy" src="${esc(artUrl(it.id))}" alt="" onerror="this.remove()"></div>`
       : `<div class="rthumb"><span class="idx">${it.no}</span></div>`;
     return `<div class="row ${isCur?"playing":""}">
       <div class="rmain" data-jump="${it.no}">
@@ -350,7 +411,7 @@ function browseRows(){
   if(!S.tracks.length) return `<div class="empty">${IC.search}<div>${S.query?"No matches.":"No music yet."}</div></div>`;
   return `<div class="rows">`+S.tracks.slice(0,500).map(t=>{
     const thumb = t.has_art
-      ? `<div class="rthumb"><img loading="lazy" src="/api/art?id=${enc(t.id)}" alt="" onerror="this.remove()"></div>`
+      ? `<div class="rthumb"><img loading="lazy" src="${esc(artUrl(t.id))}" alt="" onerror="this.remove()"></div>`
       : `<div class="rthumb"></div>`;
     return `<div class="row">
       <div class="rmain">
@@ -387,6 +448,10 @@ $("#tabs").addEventListener("click", e=>{ const b=e.target.closest("button"); if
 function render(){ if(S.tab==="now")renderNow(); else if(S.tab==="queue"){renderQueue();refreshQueue();} else renderBrowse(); }
 
 fill($("#vol"));
-Promise.all([loadRooms(), loadTracks("")]).catch(()=>online(false)).finally(()=>{ render(); poll(); });
+(async()=>{
+  try{ const r=await fetch("/api/state"); if(!r.ok) throw 0; }catch(e){ DEMO=true; }
+  await Promise.all([loadRooms(), loadTracks("")]).catch(()=>online(false));
+  render(); poll();
+})();
 </script>
 </body></html>

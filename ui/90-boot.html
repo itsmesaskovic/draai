@@ -496,6 +496,7 @@ async function boot(){
   }
   try{ const y=await api("/api/yt_available"); if(!y.available){ $("#ytSection").classList.add("hidden"); if(y.missing&&y.missing.length) toast("yt-dlp import available after: brew install "+y.missing.join(", "),true); } }catch(e){ $("#ytSection").classList.add("hidden"); }
   await refreshTracks();
+  loadAccess();
   if(A.speaker){ startPolling(); loadEq(); loadRoomVolumes(); }
 }
 
