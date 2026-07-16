@@ -23,16 +23,48 @@ No Sonos account. No internet needed. Nothing leaves your home network.
 
 ## What it looks like
 
-*(Screenshot shows a demo library with generated artwork.)*
+*(Screenshots show a demo library with generated artwork.)*
 
-![DRAAI in its light theme](docs/light.png)
+Calm and consistent: one fixed teal accent, album-art thumbnails on every
+row, and folder/artist groups you can collapse. It follows your macOS
+light/dark setting — one click to override.
 
-The interface is calm and consistent: one fixed accent (a soft teal),
-album-art thumbnails on every row, and folder/artist groups you can
-collapse. It follows your macOS light/dark setting, one click to override.
-The full-screen now-playing view (the ⛶ icon in the player bar) still takes
-its color from the album art, and the record icon at the top of it switches
-to a spinning vinyl deck with your artwork as the label.
+![DRAAI home, dark theme](docs/images/dark-home.png)
+
+![DRAAI in light theme](docs/images/light.jpg)
+
+**Full-screen now playing** — the ⛶ icon opens a cinematic view coloured by
+the album art; the record icon at the top spins it into a vinyl deck with
+your artwork as the label.
+
+![Full-screen now playing](docs/images/default-playing.png)
+
+![Vinyl deck](docs/images/turntable-playing.png)
+
+**Full-screen visualizers** — press `A` for vintage twin VU meters, `S` for a
+spectrum analyzer. Both are *visuals* modeled from the track's audio analysis
+(the sound plays on your speaker, never in the browser) — never a fake signal.
+
+![Amplifier — twin VU meters](docs/images/vu-meter.jpg)
+
+![Spectrum analyzer](docs/images/fft-meter.jpg)
+
+**Your library, organized** — group songs by folder or artist, sort and
+search, and manage the queue with drag-to-reorder and play-next.
+
+![Songs grouped by folder](docs/images/songs-grouped-by-folder.png)
+
+![The queue](docs/images/queue.png)
+
+**Control it from your phone** — a QR code in the sidebar opens a slim remote
+on any phone on your Wi-Fi: what's playing, transport, the queue (reorder,
+remove, play next), and browse-and-add from your whole library.
+
+<p>
+  <img src="docs/images/mobile-remote-home.jpg" alt="Phone remote — now playing" width="31%">
+  <img src="docs/images/mobile-remote-browse.jpg" alt="Phone remote — browse the library" width="31%">
+  <img src="docs/images/mobile-remote-queue.jpg" alt="Phone remote — the queue" width="31%">
+</p>
 
 ## Why this exists
 
@@ -154,6 +186,9 @@ fix it before moving on.
 - Songs view can group by folder or artist, sort by title/artist/date added;
   folder headers show the full path on hover and open in Finder
 - Long sets resume where you left off, even after restarting
+- Full-screen visualizers: a cinematic now-playing view, twin VU meters
+  (press `A`) and a spectrum analyzer (press `S`) — modeled from the track's
+  audio analysis, never a fake signal
 - Vinyl deck view: a spinning record with your artwork as the label
 - Media keys: play/pause from your keyboard, artwork in macOS now-playing
 - Library from one or many folders — add them with a built-in folder picker,
@@ -164,7 +199,9 @@ fix it before moving on.
 - Multi-room: group speakers to play in sync, per-room volume
 - Real speaker EQ (bass / treble / loudness on the speaker itself)
 - Sleep timer
-- Guest mode: a QR code lets anyone on your Wi-Fi queue songs from their phone
+- Phone remote: a QR code in the sidebar opens a slim remote on any phone on
+  your Wi-Fi — control playback, manage the queue, and browse and add from
+  your whole library
 - Supports mp3, m4a/aac, flac, wav, aiff, ogg — streamed untouched, so
   lossless files play lossless
 

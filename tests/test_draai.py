@@ -93,6 +93,94 @@ ZONE_XML = """<ZoneGroupState><ZoneGroups>
 </ZoneGroups></ZoneGroupState>"""
 
 
+def qr_decode(mat):
+    """Decode a DRAAI-generated QR matrix the way a scanner does: rebuild the
+    function-module map, read the format info for the mask, un-mask, read the
+    data bits in zigzag order, and return (rs_syndromes_zero, decoded_text).
+    A conformant scanner accepts the symbol iff all RS syndromes are zero."""
+    size = len(mat)
+    ver = (size - 17) // 4
+    M = [[None] * size for _ in range(size)]
+
+    def setr(r, c, pat):
+        for dr, row in enumerate(pat):
+            for dc, v in enumerate(row):
+                if 0 <= r + dr < size and 0 <= c + dc < size:
+                    M[r + dr][c + dc] = v
+
+    fnd = [[1] * 7, [1, 0, 0, 0, 0, 0, 1], [1, 0, 1, 1, 1, 0, 1],
+           [1, 0, 1, 1, 1, 0, 1], [1, 0, 1, 1, 1, 0, 1],
+           [1, 0, 0, 0, 0, 0, 1], [1] * 7]
+    for r, c in ((0, 0), (0, size - 7), (size - 7, 0)):
+        setr(r, c, fnd)
+    for i in range(8):
+        for r, c in ((7, i), (i, 7), (7, size - 8 + i), (i, size - 8),
+                     (size - 8, i), (size - 8 + i, 7)):
+            if 0 <= r < size and 0 <= c < size and M[r][c] is None:
+                M[r][c] = 0
+    ap = [[1] * 5, [1, 0, 0, 0, 1], [1, 0, 1, 0, 1], [1, 0, 0, 0, 1], [1] * 5]
+    for r in sp._QR_ALIGN[ver]:
+        for c in sp._QR_ALIGN[ver]:
+            if M[r][c] is None:
+                setr(r - 2, c - 2, ap)
+    for i in range(8, size - 8):
+        if M[6][i] is None:
+            M[6][i] = 1 - (i % 2)
+        if M[i][6] is None:
+            M[i][6] = 1 - (i % 2)
+    M[size - 8][8] = 1
+    fp = []
+    for i in range(9):
+        if i != 6:
+            fp += [(8, i), (i, 8)]
+    for i in range(8):
+        fp += [(size - 1 - i, 8), (8, size - 1 - i)]
+    for r, c in fp:
+        if M[r][c] is None:
+            M[r][c] = 0
+    func = [[M[r][c] is not None for c in range(size)] for r in range(size)]
+    pos_a = [(8, 0), (8, 1), (8, 2), (8, 3), (8, 4), (8, 5), (8, 7), (8, 8),
+             (7, 8), (5, 8), (4, 8), (3, 8), (2, 8), (1, 8), (0, 8)]
+    fmt = 0
+    for r, c in pos_a:
+        fmt = (fmt << 1) | mat[r][c]
+    mask = ((fmt ^ 0x5412) >> 10) & 0b111
+    masks = [lambda r, c: (r + c) % 2 == 0, lambda r, c: r % 2 == 0,
+             lambda r, c: c % 3 == 0, lambda r, c: (r + c) % 3 == 0,
+             lambda r, c: (r // 2 + c // 3) % 2 == 0,
+             lambda r, c: (r * c) % 2 + (r * c) % 3 == 0,
+             lambda r, c: ((r * c) % 2 + (r * c) % 3) % 2 == 0,
+             lambda r, c: ((r + c) % 2 + (r * c) % 3) % 2 == 0]
+    bits = []
+    col, up = size - 1, True
+    while col > 0:
+        if col == 6:
+            col -= 1
+        for r in (range(size - 1, -1, -1) if up else range(size)):
+            for c in (col, col - 1):
+                if not func[r][c]:
+                    bits.append(mat[r][c] ^ (1 if masks[mask](r, c) else 0))
+        up = not up
+        col -= 2
+    code = [int("".join(map(str, bits[i:i + 8])), 2)
+            for i in range(0, (len(bits) // 8) * 8, 8)]
+    n_data = sp._QR_TOTAL[ver] - sp._QR_EC[ver]
+    n_ec = sp._QR_EC[ver]
+    code = code[:n_data + n_ec]
+    syn_zero = True
+    for j in range(n_ec):
+        acc = 0
+        for k, b in enumerate(code):
+            if b:
+                acc ^= sp._GF_EXP[(sp._GF_LOG[b] + (len(code) - 1 - k) * j) % 255]
+        if acc:
+            syn_zero = False
+    b = "".join(format(x, "08b") for x in code[:n_data])
+    cnt = int(b[4:12], 2)
+    txt = bytes(int(b[12 + i * 8:20 + i * 8], 2) for i in range(cnt))
+    return syn_zero, txt.decode("utf-8", "replace")
+
+
 class SoapMock:
     """Stands in for a Sonos household."""
 
@@ -268,6 +356,29 @@ class DraaiTests(unittest.TestCase):
         for r, c in ((0, 0), (0, n - 7), (n - 7, 0)):
             self.assertEqual(m[r][c], 1)
             self.assertEqual(m[r + 3][c + 3], 1)   # center of the eye
+
+    def test_qr_reed_solomon(self):
+        # GF(256) tables must be populated (the bug: they were all zeros, so
+        # every QR shipped with all-zero EC and would not decode).
+        self.assertFalse(all(x == 0 for x in sp._GF_EXP))
+        self.assertTrue(all(sp._GF_LOG[sp._GF_EXP[i]] == i for i in range(255)))
+        # canonical reference vector (Thonky "HELLO WORLD", 10 EC codewords)
+        data = [32, 91, 11, 120, 209, 114, 220, 77, 67, 64,
+                236, 17, 236, 17, 236, 17]
+        self.assertEqual(sp._rs_ec(data, 10),
+                         [196, 35, 39, 119, 235, 215, 231, 226, 93, 23])
+
+    def test_qr_decodes(self):
+        # Round-trip: a scanner un-masks, reads, and checks RS syndromes. For
+        # several lengths (versions 1-4) the symbol must carry zero errors and
+        # decode back to the exact URL.
+        for url in ("http://a.b/x",
+                    "http://192.168.1.10:8765/remote",
+                    "http://192.168.100.200:8799/remote?x=1",
+                    "http://192.168.100.200:8799/remote?token=abcdef1234567890"):
+            syn_zero, decoded = qr_decode(sp._qr_matrix(url))
+            self.assertTrue(syn_zero, "RS syndromes nonzero for %r" % url)
+            self.assertEqual(decoded, url)
 
     # -- HTTP API --------------------------------------------------------------------
 

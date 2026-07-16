@@ -14,6 +14,7 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
   $("#npSpeaker").textContent=spk;
   if(document.activeElement!==$("#volSlider")) setSlider($("#volSlider"),A.status.volume);
   if(document.activeElement!==$("#npVol")) setSlider($("#npVol"),A.status.volume);
+  if(document.activeElement!==$("#specVol")) setSlider($("#specVol"),A.status.volume);
   $("#ampPlay").querySelector(".ic").innerHTML=pp; $("#ampPlay").querySelector(".ic").classList.toggle("fill",playing);
   $("#ampSpeaker").textContent=spk; $("#srcVal").textContent=A.speaker?A.speaker.name:"—";
   $("#ampTitle").textContent=A.status.title||"Nothing playing";
@@ -306,12 +307,12 @@ function wire(){
   $("#playBtn").addEventListener("click",togglePlay); $("#npPlay").addEventListener("click",togglePlay);
   $("#ampPlay").addEventListener("click",togglePlay);
   // volume
-  const onVol=e=>{ const v=+e.target.value; setSlider($("#volSlider"),v); setSlider($("#npVol"),v); cmd("volume",v); };
-  $("#volSlider").addEventListener("input",onVol); $("#npVol").addEventListener("input",onVol);
+  const onVol=e=>{ const v=+e.target.value; setSlider($("#volSlider"),v); setSlider($("#npVol"),v); setSlider($("#specVol"),v); cmd("volume",v); };
+  $("#volSlider").addEventListener("input",onVol); $("#npVol").addEventListener("input",onVol); $("#specVol").addEventListener("input",onVol);
   // amp knobs
   wireKnob($("#knobVol"),()=>A.status.volume,v=>{ v=clamp(Math.round(v),0,100); A.status.volume=v;
     setKnob($("#knobVol"),v,0,100); $("#volVal").textContent=v;
-    setSlider($("#volSlider"),v); setSlider($("#npVol"),v); cmd("volume",v); });
+    setSlider($("#volSlider"),v); setSlider($("#npVol"),v); setSlider($("#specVol"),v); cmd("volume",v); });
   $("#knobSrc").addEventListener("click",()=>{ if(A.speakers.length<2)return;
     const i=A.speakers.findIndex(s=>A.speaker&&s.uuid===A.speaker.uuid);
     const nx=A.speakers[(i+1)%A.speakers.length]; selectRoom(nx.uuid); });

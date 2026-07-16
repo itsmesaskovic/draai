@@ -49,7 +49,8 @@
 .btn.acc{color:var(--play-ink);background:rgb(var(--ac));border-color:transparent;font-weight:600;box-shadow:0 0 22px rgb(var(--ac) / .35)}
 .btn.acc:hover{filter:brightness(1.08)}
 .btn .ic{width:15px;height:15px}
-.side .foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim2)}
+.side .sidebottom{margin-top:auto;display:flex;flex-direction:column;gap:16px}
+.side .foot{padding-top:14px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim2)}
 .side .foot .cnt{flex:1}
 
 /* ---------------- main ---------------- */

@@ -109,6 +109,22 @@ _GF_EXP = [0] * 512
 _GF_LOG = [0] * 256
 
 
+def _init_gf():
+    # GF(256) with primitive polynomial x^8 + x^4 + x^3 + x^2 + 1 (0x11D)
+    x = 1
+    for i in range(255):
+        _GF_EXP[i] = x
+        _GF_LOG[x] = i
+        x <<= 1
+        if x & 0x100:
+            x ^= 0x11D
+    for i in range(255, 512):
+        _GF_EXP[i] = _GF_EXP[i - 255]
+
+
+_init_gf()
+
+
 def _rs_ec(data, n_ec):
     # generator polynomial: product of (x + α^i), i = 0..n_ec-1 (highest first)
     gen = [1]
