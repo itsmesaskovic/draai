@@ -1,20 +1,39 @@
-# Web UI (player_ui.html)
+# Web UI (assembled from ui/)
 
-> Single self-contained HTML file that is the "HALCYON"-level DRAAI interface: inline CSS/JS, no build step, no CDNs, no accounts, works offline against the engine's HTTP API.
+> One self-contained HTML document served to the browser — inline CSS/JS, no build step, no CDNs, no accounts, works offline against the engine's HTTP API. It is **assembled at serve time** from partials under `ui/`; the single-file `player_ui.html` is a build artifact, not the source.
 
 ## Purpose
 
-`player_ui.html` is the full-featured player interface: library browsing (albums/songs/queue/playlists), room control and grouping, EQ, sleep timer, YouTube import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It has zero build tooling — it is edited and shipped as one 1,462-line HTML file (`wc -l` at time of writing; ~104 KB).
+`player_ui.html` is the full-featured player interface: library browsing (albums/songs/queue/playlists), room control and grouping, EQ, sleep timer, YouTube import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
+
+**Never hand-edit a top-level `player_ui.html`.** It is a git-ignored build artifact produced by `build.py` for the `.pyz`, and `_load_ui()` gives a file in the cwd precedence over the partials — so a stale one silently masks every change you make in `ui/`. If a UI edit appears to do nothing, check for one before debugging anything else.
 
 ## Where it lives
 
-- Source of truth: `/Users/sasa/Dev/draai/player_ui.html` (repo root).
+- Source of truth: the `ui/` directory (partials + `manifest.txt`). **Line references below of the form `player_ui.html:NNN` predate the split** and refer to the assembled output; the code they describe now lives in the corresponding `ui/` partial.
 - Loaded by the engine in this precedence order (`draai/server.py:27-42`, `_load_ui()`):
   1. `player_ui.html` next to the current working directory (`os.getcwd()`) — lets you edit-and-refresh against a running engine.
   2. The copy embedded in the `draai` package via `importlib.resources` (`draai/server.py:38-40`) — this is how it survives being shipped inside `draai.pyz`.
   3. The built-in `PAGE` string fallback (`draai/server.py:755`, ~528 lines) if neither file is found.
 - The built-in `PAGE` fallback is intentionally minimal — it has no grouping, no album-palette pipeline, no vinyl deck, no media-key integration (verified: zero occurrences of `vinylStage`/`GROUPKEYS`/`paletteFromImage`/`mediaSession` in `PAGE`). Per `CLAUDE.md`, new HALCYON-level features belong only in `player_ui.html`, never backported to `PAGE`.
 - Design history: `docs/superpowers/specs/2026-07-15-draai-fixed-accent-theming-rows-design.md` — the spec that produced the current fixed-accent + token theming + redesigned rows. It also documents *why* certain CLAUDE.md notes are now stale (see Gotchas).
+
+## Full-screen modes
+
+Each mode is a directory under `ui/modes/` contributing three files, listed in `ui/manifest.txt`:
+
+| Mode | Key | Directory |
+| --- | --- | --- |
+| Now playing | `F` | `ui/modes/np/` |
+| Amplifier (VU) | `A` | `ui/modes/amp/` |
+| Spectrum | `S` | `ui/modes/spectrum/` |
+| DRIVE | `D` | `ui/modes/drive/` |
+
+They share `openMode(id, sizers)` and the `FS_IDS` list in `ui/90-boot.html`; `Esc` closes whichever is open. `tick()` in `ui/70-script.html` only draws the mode that is currently open, and skips the dock waveform entirely while one is — the fullscreen modes are `position:fixed; inset:0` and cover it.
+
+### DRIVE
+
+An 80s arcade driving scene rendered into a 320x180 backing buffer and blitted, nearest-neighbour, onto a display canvas sized to an exact integer multiple of that buffer (`sizeDriveCanvas`) so the upscale lands on whole pixels. Everything on screen traces to a real signal — see `docs/technical/drive-and-cars.md` for the scene, the car sprite format, and how to author a new car.
 
 ## Key concepts
 

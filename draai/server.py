@@ -17,6 +17,7 @@ from draai.library import get_art, scan_all, scan_folder
 from draai.analysis import get_analysis, prefetch_analysis
 from draai.youtube import YT_URL_RE, start_youtube_job, yt_available
 from draai.playlists import delete_playlist, list_playlists, load_playlist, save_playlist
+from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
 from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms,
     get_status, group_join, group_leave, play_tracks, queue_jump, queue_move,
@@ -534,6 +535,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"playlists": list_playlists()})
         elif path == "/api/prefs":
             self.send_json(config.get("ui", {}))
+        elif path == "/api/cars":
+            # DRIVE sprites dropped in <config>/{cars,traffic} — data only, validated there
+            self.send_json({"cars": list_cars(), "traffic": list_traffic()})
         elif path == "/api/yt_available":
             self.send_json(yt_available())
         elif path.startswith("/api/yt_status"):

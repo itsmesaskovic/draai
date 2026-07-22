@@ -5,14 +5,17 @@ css/20-chrome.css
 css/30-fullscreen.css
 modes/amp/amp.css
 modes/spectrum/spectrum.css
+modes/drive/drive.css
 css/40-theme.css
 css/49-responsive.css
 40-body.html
 modes/np/np.html
 modes/amp/amp.html
 modes/spectrum/spectrum.html
+modes/drive/drive.html
 59-popovers.html
 70-script.html
 modes/amp/amp.js
 modes/spectrum/spectrum.js
+modes/drive/drive.js
 90-boot.html

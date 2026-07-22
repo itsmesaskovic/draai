@@ -7,7 +7,7 @@ github.com/itsmesaskovic/draai.
 
 Deep per-domain references for agents live in `docs/technical/` (architecture,
 sonos-protocol, google-cast, http-and-media, library-and-metadata,
-audio-analysis, web-ui, security-and-privacy). The gotchas below are the quick
+audio-analysis, web-ui, drive-and-cars, security-and-privacy). The gotchas below are the quick
 reference; those docs are the full story.
 
 ## Hard rules (do not break these)

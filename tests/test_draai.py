@@ -181,6 +181,30 @@ def qr_decode(mat):
     return syn_zero, txt.decode("utf-8", "replace")
 
 
+def _pulse_train(step, period, duration, spike=90, base=10):
+    """Synthetic low/mid/high envelopes: a sharp one-frame spike in `low`
+    every `period` seconds, flat elsewhere. Returns (low, mid, high, true_times).
+
+    The first pulse is placed at t=period, not t=0: onset novelty is a
+    frame-to-frame diff, so a transient sitting exactly on frame 0 has no
+    prior frame to rise from and can never be detected — the same is true
+    of any real recording (nothing has a beat at t=0 with zero pre-roll).
+    """
+    n = int(round(duration / step))
+    low = [base] * n
+    mid = [base] * n
+    high = [base] * n
+    true_times = []
+    t = period
+    while t < duration:
+        idx = int(round(t / step))
+        if idx < n:
+            low[idx] = spike
+            true_times.append(idx * step)
+        t += period
+    return low, mid, high, true_times
+
+
 class SoapMock:
     """Stands in for a Sonos household."""
 
@@ -685,6 +709,177 @@ class DraaiTests(unittest.TestCase):
         self.assertLessEqual(len(d["peaks"]), 240)
         # left channel is much louder than right
         self.assertGreater(sum(d["ampL"]), sum(d["ampR"]) * 3)
+
+    # -- beat / section detection (pure functions, no ffmpeg needed) ----------
+
+    def test_beat_detection_120bpm(self):
+        # production step (0.03s) — 0.5s is 16.667 frames at this step, i.e.
+        # NOT an integer frame count. That mismatch is exactly what makes
+        # this a meaningful test: a detector that snaps the beat period to
+        # an integer frame count will drift over a long track (120 BPM
+        # would read as 117.6 BPM, and the grid slips out of phase by up to
+        # half a beat). Run long enough (300s / 600 beats) for drift to
+        # show up if it's there.
+        step = sp.ANALYSIS_STEP
+        low, mid, high, true_times = _pulse_train(step, 0.5, 300.0)
+        beats, bpm = sp.detect_beats(low, mid, high, step)
+        self.assertIsNotNone(bpm)
+        self.assertAlmostEqual(bpm, 120.0, delta=2)
+        self.assertTrue(beats)
+        errs = sorted(min(abs(tt - b) for b in beats) for tt in true_times)
+        median_err = errs[len(errs) // 2]
+        max_err = errs[-1]
+        self.assertLess(median_err, 0.04)
+        self.assertLess(max_err, 0.08, "beat grid drifted out of phase: max_err=%r" % max_err)
+
+    def test_beat_detection_octave_guard(self):
+        step = sp.ANALYSIS_STEP
+        low, mid, high, _ = _pulse_train(step, 0.5, 30.0)
+        beats, bpm = sp.detect_beats(low, mid, high, step)
+        self.assertIsNotNone(bpm)
+        self.assertGreater(abs(bpm - 240), 10)
+        self.assertGreater(abs(bpm - 60), 10)
+
+    def test_beat_detection_fast_tempos_not_halved(self):
+        # 150-190 BPM (hardstyle/hardcore territory) must not be reported
+        # at half tempo. The octave-guard band now extends to 180 BPM, but
+        # 175 and 190 BPM specifically also exercise a second failure mode:
+        # at a 0.03s step their true period lands close to a half-integer
+        # frame count, so quantization jitter suppresses the raw
+        # single-cycle autocorrelation and the two-cycle (half-tempo) lag
+        # scores higher even though it's inside the preferred band too —
+        # only a sub-harmonic check (comparing the winner against its own
+        # half-lag) catches that, not the band/ratio widening alone.
+        step = sp.ANALYSIS_STEP
+        for true_bpm in (160, 175, 190):
+            low, mid, high, _ = _pulse_train(step, 60.0 / true_bpm, 60.0)
+            beats, bpm = sp.detect_beats(low, mid, high, step)
+            self.assertIsNotNone(bpm, "no bpm detected for %r BPM train" % true_bpm)
+            self.assertAlmostEqual(bpm, true_bpm, delta=3,
+                                   msg="%r BPM train detected as %r (halved?)" % (true_bpm, bpm))
+
+    def test_beat_grid_ignores_offbeat_onsets(self):
+        # Regression: the grid fit used to index onsets sequentially with
+        # `max(1, round(gap/period))`, so an onset half a beat after the last one was
+        # charged a WHOLE beat. On a real frenchcore track 178 such off-beat hits
+        # inflated the assigned span to 868 beats against ~809 of music, dragging a
+        # correct 199.7 BPM up to 216.2. Every pre-existing test passed throughout,
+        # because they all used clean pulse trains with nothing on the off-beat.
+        period = 0.30                       # 200 BPM
+        onsets = []
+        for i in range(400):
+            onsets.append(round(i * period, 4))
+            if i % 3 == 0:                  # a third of beats also carry an off-beat hit
+                onsets.append(round(i * period + period / 2, 4))
+        onsets.sort()
+        phase, fitted = sp._fit_beat_grid(onsets, period)
+        self.assertAlmostEqual(fitted, period, delta=0.005,
+                               msg="off-beat onsets inflated the fitted tempo: %.1f BPM"
+                                   % (60.0 / fitted))
+
+    def test_beat_grid_cannot_redecide_tempo(self):
+        # The fit polishes frame quantization; it must never overrule the tempo that
+        # seeded it. Feed onsets that imply a very different period and confirm the
+        # result stays within the +/-2% clamp.
+        seed = 0.50
+        onsets = [round(i * 0.30, 4) for i in range(300)]   # implies 0.30, not 0.50
+        phase, fitted = sp._fit_beat_grid(onsets, seed)
+        self.assertGreaterEqual(fitted, seed * 0.97)
+        self.assertLessEqual(fitted, seed * 1.03)
+
+    def test_tempo_corroboration_rescues_soft_peak(self):
+        # A real 200 BPM frenchcore track produced the RIGHT period (0.3005s = 199.7
+        # BPM) and was discarded for scoring 1.204 against the 1.3 gate, because a
+        # third of its onsets sit on the off-beat and flatten the autocorrelation peak.
+        # A soft peak corroborated by the median inter-onset interval is trustworthy.
+        onsets = [round(i * 0.30, 3) for i in range(200)]        # steady 200 BPM
+        self.assertTrue(sp._tempo_trustworthy(0.3005, 1.20, onsets))
+        # ...but corroboration must not become a back door: a period that disagrees
+        # with the onsets stays rejected however close to the gate it scores. This is
+        # the case that broke on real files when the gate was simply lowered.
+        self.assertFalse(sp._tempo_trustworthy(0.225, 1.29, onsets))
+        # and nothing rescues a peak below the floor
+        self.assertFalse(sp._tempo_trustworthy(0.3005, 1.00, onsets))
+        # a sharp peak needs no corroboration at all
+        self.assertTrue(sp._tempo_trustworthy(0.4, 1.9, []))
+
+    def test_beat_detection_slow_end_not_doubled(self):
+        # Guards the slow half of the range against being reported at double tempo.
+        step = sp.ANALYSIS_STEP
+        for true_bpm in (60, 75, 90, 105, 125):
+            low, mid, high, _ = _pulse_train(step, 60.0 / true_bpm, 60.0)
+            beats, bpm = sp.detect_beats(low, mid, high, step)
+            self.assertIsNotNone(bpm, "no bpm detected for %r BPM train" % true_bpm)
+            self.assertAlmostEqual(bpm, true_bpm, delta=3,
+                                   msg="%r BPM train detected as %r (doubled?)" % (true_bpm, bpm))
+
+    def test_beat_detection_uptempo_not_third_timed(self):
+        # 187-195 BPM: near the 0.30s search floor, the true lag falls
+        # between the 10- and 11-frame lags (both very coarse), while a 3x
+        # harmonic lands on a finely-represented longer lag and can
+        # outscore the fundamental — a divide-by-3 error, not the
+        # divide-by-2 error the other fast-tempo test exercises.
+        step = sp.ANALYSIS_STEP
+        for true_bpm in (187, 193, 195):
+            low, mid, high, _ = _pulse_train(step, 60.0 / true_bpm, 60.0)
+            beats, bpm = sp.detect_beats(low, mid, high, step)
+            self.assertIsNotNone(bpm, "no bpm detected for %r BPM train" % true_bpm)
+            self.assertAlmostEqual(bpm, true_bpm, delta=4,
+                                   msg="%r BPM train detected as %r (1/3 tempo?)" % (true_bpm, bpm))
+
+    def test_beat_detection_slow_tempo_not_doubled(self):
+        step = sp.ANALYSIS_STEP
+        low, mid, high, _ = _pulse_train(step, 60.0 / 70, 60.0)
+        beats, bpm = sp.detect_beats(low, mid, high, step)
+        self.assertIsNotNone(bpm)
+        self.assertAlmostEqual(bpm, 70.0, delta=3)
+
+    def test_sections_quiet_then_loud(self):
+        step = 0.03
+        duration = 60.0
+        n = int(round(duration / step))
+        half = n // 2
+        amp = [20] * half + [90] * (n - half)
+        low = list(amp); mid = list(amp); high = list(amp)
+        sections = sp.detect_sections(amp, low, mid, high, step)
+        self.assertEqual(sections[0]["t"], 0.0)
+        # a boundary near the midpoint (30s), within +/-4s
+        self.assertTrue(any(abs(sec["t"] - 30.0) <= 4 for sec in sections[1:]),
+                        "no boundary near the midpoint: %r" % sections)
+        self.assertGreater(sections[-1]["energy"], sections[0]["energy"])
+
+    def test_beats_and_sections_degenerate_input(self):
+        beats, bpm = sp.detect_beats([], [], [], 0.03)
+        self.assertEqual(beats, [])
+        self.assertIsNone(bpm)
+        # very short (a handful of frames) must not raise either
+        beats, bpm = sp.detect_beats([10, 12, 11], [10, 11, 10], [10, 10, 11], 0.03)
+        self.assertEqual(beats, [])
+        self.assertIsNone(bpm)
+
+        sections = sp.detect_sections([], [], [], [], 0.03)
+        self.assertEqual(sections, [{"t": 0.0, "energy": 0.0}])
+        sections = sp.detect_sections([50, 51], [50, 51], [50, 51], [50, 51], 0.03)
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(sections[0]["t"], 0.0)
+
+    def test_analysis_payload_shape(self):
+        # Floor, not equality. Retuning any beat/section constant REQUIRES bumping the
+        # version, because get_analysis serves cached JSON whenever v matches — so a
+        # detection fix silently never reaches already-analysed tracks. An equality
+        # assertion here just breaks on every legitimate bump without catching that;
+        # a floor keeps the version moving forward and stays honest about why.
+        self.assertIsInstance(sp.ANALYSIS_VERSION, int)
+        self.assertGreaterEqual(sp.ANALYSIS_VERSION, 5)
+        step = 0.03
+        n = int(round(10.0 / step))
+        amp = [50] * n
+        beats, bpm = sp.detect_beats(amp, amp, amp, step)
+        sections = sp.detect_sections(amp, amp, amp, amp, step)
+        self.assertIsInstance(beats, list)
+        self.assertTrue(bpm is None or isinstance(bpm, float))
+        self.assertIsInstance(sections, list)
+        self.assertTrue(all("t" in s and "energy" in s for s in sections))
 
     def test_ui_assembles(self):
         from draai.ui import assemble_ui
