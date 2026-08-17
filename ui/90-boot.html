@@ -246,10 +246,10 @@ function renderSleep(){ const opts=[0,15,30,45,60,90];
   $("#sleepChips").innerHTML=opts.map(m=>`<button class="chipbtn ${A.sleepMin===m?"on":""}" data-sleep="${m}">${m===0?"Off":m+"m"}</button>`).join("");
   const st=$("#sleepState"); if(A.sleepMin>0){ st.classList.remove("hidden"); st.innerHTML=`<span class="spin"></span>Fading out in ${A.sleepMin} min`; } else st.classList.add("hidden"); }
 
-/* ---------------- YouTube ---------------- */
+/* ---------------- Import (yt-dlp) ---------------- */
 const ytJobEls={};
 async function ytGet(){ const url=$("#ytInput").value.trim(); if(!url)return;
-  await guard(async()=>{ const r=await api("/api/youtube",{url}); $("#ytInput").value=""; const el=document.createElement("div"); el.className="chip";
+  await guard(async()=>{ const r=await api("/api/import",{url}); $("#ytInput").value=""; const el=document.createElement("div"); el.className="chip";
     el.innerHTML=`<span class="spin"></span><span style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Downloading…</span>`;
     $("#ytJobs").appendChild(el); ytJobEls[r.job]=el; pollYt(r.job); }); }
 async function pollYt(job){ try{ const s=await api("/api/yt_status?id="+enc(job)); const el=ytJobEls[job];
@@ -511,8 +511,8 @@ const Demo=(()=>{
       case"/api/folder": folder=body.folder; return{ok:true};
       case"/api/rescan_speakers": return{ok:true};
       case"/api/add_ip": speakers.push({uuid:"Z_"+Math.random().toString(36).slice(2,6).toUpperCase(),name:"Speaker "+(speakers.length+1),ip:body.ip,members:[{uuid:"Z_new",name:"Speaker",ip:body.ip,volume:30}]}); return{ok:true};
-      case"/api/youtube":{ const j="job"+(Object.keys(jobs).length+1); const names=["Live at Radar","Sunset Version","Rework","Session Take"]; const title=names[(Math.random()*names.length)|0]+" (YT)"; jobs[j]={done:Date.now()+4200,title};
-        setTimeout(()=>tracks.unshift({id:String(id++),title,artist:"YouTube",album:"Downloads",folder:"YouTube/Downloads",has_art:true,dur:205}),4300); return{job:j}; }
+      case"/api/import":{ const j="job"+(Object.keys(jobs).length+1); const names=["Live at Radar","Sunset Version","Rework","Session Take"]; const title=names[(Math.random()*names.length)|0]; jobs[j]={done:Date.now()+4200,title};
+        setTimeout(()=>tracks.unshift({id:String(id++),title,artist:"Imported",album:"Downloads",folder:"Imported/Downloads",has_art:true,dur:205}),4300); return{job:j}; }
       default: throw new Error("Not found: "+p);
     }
   }

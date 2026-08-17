@@ -12,7 +12,7 @@ DRAAI has zero pip dependencies (`CLAUDE.md` rule 1). That means there is no
 for the library or playlists. `draai/library.py` implements just enough of
 each tag format's binary layout to pull title/artist/album and embedded
 cover art, and the library itself is an in-memory list rebuilt by a full
-filesystem walk (`scan_all`). Playlists and YouTube import piggyback on the
+filesystem walk (`scan_all`). Playlists and yt-dlp import piggyback on the
 same track records and the plain filesystem — `.m3u` files and an
 `Imported/` folder — so nothing here needs its own storage format.
 
@@ -21,7 +21,7 @@ same track records and the plain filesystem — `.m3u` files and an
 - `draai/library.py` — tag readers (`_tags_mp3`, `_tags_mp4`, `_tags_flac`),
   `read_tags` dispatcher, `get_art`, `scan_all` / `scan_folder` / `_scan_root`.
 - `draai/playlists.py` — `.m3u` read/write/list/delete.
-- `draai/youtube.py` — `start_youtube_job` (shells out to the user's yt-dlp).
+- `draai/importer.py` — `start_import_job` (shells out to the user's yt-dlp).
 - `draai/media.py` — `media_url` (track id → HTTP URL), `find_tool`
   (PATH + Homebrew-prefix lookup for `ffmpeg`/`yt-dlp`).
 - `draai/constants.py` — `AUDIO_EXTS` (supported extensions + MIME types).
@@ -160,46 +160,46 @@ Search and sort/group are split across the server and the client:
   (`A.collapsed`, `savePrefs()`), which is server-persisted via `/api/prefs`
   per the "no localStorage" rule.
 
-### yt-dlp integration (draai/youtube.py)
+### yt-dlp integration (draai/importer.py)
 
 DRAAI never bundles, downloads, or installs yt-dlp — it only looks for it
 on the user's machine and hands off a URL, matching `CLAUDE.md` rule 4 and
 the "no site-specific downloader code" rule.
 
-- `yt_available()` (`draai/youtube.py:19-21`) reports whether both
+- `yt_available()` (`draai/importer.py:19-21`) reports whether both
   `yt-dlp` and `ffmpeg` are found via `find_tool()` (PATH, then
   `/opt/homebrew/bin` / `/usr/local/bin`, `draai/media.py:26-34`); the UI
   hides the import section entirely if either is missing
   (`player_ui.html:1201`).
-- `start_youtube_job(url)` (`draai/youtube.py:24-72`) raises immediately
+- `start_import_job(url)` (`draai/importer.py:24-72`) raises immediately
   with an actionable message (`"brew install yt-dlp ffmpeg"`) if a tool is
-  missing (`draai/youtube.py:26-28`). Otherwise it spins up a background
+  missing (`draai/importer.py:26-28`). Otherwise it spins up a background
   daemon thread and returns a job id right away; progress is polled via
   `yt_jobs[job_id]` (`state.yt_jobs`, a plain dict — no persistence, jobs
   vanish on restart).
 - The background thread does two subprocess calls to the *user's own*
   `yt-dlp` binary: first `yt-dlp --no-playlist --print title <url>`
   (best-effort, just for a UI label,
-  `draai/youtube.py:37-44`), then the real extraction:
+  `draai/importer.py:37-44`), then the real extraction:
   `yt-dlp --no-playlist -x --audio-format mp3 --audio-quality 0
   --ffmpeg-location <ffmpeg> --embed-metadata --embed-thumbnail
   --convert-thumbnails jpg -o "<Imported>/%(title)s.%(ext)s" <url>`
-  (`draai/youtube.py:49-55`) — exactly the flags CLAUDE.md documents.
+  (`draai/importer.py:49-55`) — exactly the flags CLAUDE.md documents.
   Output always goes to `<first configured library folder>/Imported/`
-  (`draai/youtube.py:45-48`; falls back to `~/Music/Imported` if no
+  (`draai/importer.py:45-48`; falls back to `~/Music/Imported` if no
   folders are configured), created with `os.makedirs(..., exist_ok=True)`.
 - No URL validation or site-specific parsing happens in DRAAI's code — the
-  `YT_URL_RE` regex (`draai/youtube.py:14`) is defined but not actually
-  referenced anywhere in `start_youtube_job`; whatever URL string the UI
+  `YT_URL_RE` regex (`draai/importer.py:14`) is defined but not actually
+  referenced anywhere in `start_import_job`; whatever URL string the UI
   sends is passed straight to yt-dlp, which does all URL/site handling
   itself. This is a discrepancy worth knowing: the regex looks like
   validation but isn't wired in — the client-side form input is the only
   gate.
 - On success, `scan_all()` is called synchronously in the worker thread
-  (`draai/youtube.py:60`) so the new file appears in the library without a
+  (`draai/importer.py:60`) so the new file appears in the library without a
   manual rescan; on non-zero exit or timeout (30 min cap,
-  `draai/youtube.py:55`), the job is marked `"error"` with the last
-  non-empty stderr/stdout line as the message (`draai/youtube.py:56-59`) —
+  `draai/importer.py:55`), the job is marked `"error"` with the last
+  non-empty stderr/stdout line as the message (`draai/importer.py:56-59`) —
   kept short and human per CLAUDE.md rule 5.
 
 ### Playlists (draai/playlists.py)
@@ -266,8 +266,8 @@ Two different, overlapping shapes exist — know which one you're looking at:
   already truncated to — so a library with >3000 matches for a search term,
   or >500 tracks in one grouped/sorted view, will silently hide the tail
   rather than error. There's no pagination.
-- **`YT_URL_RE` is dead code** (`draai/youtube.py:14`) — it's never
-  referenced in `start_youtube_job`; don't assume DRAAI validates URLs
+- **`YT_URL_RE` is dead code** (`draai/importer.py:14`) — it's never
+  referenced in `start_import_job`; don't assume DRAAI validates URLs
   before shelling out to yt-dlp.
 - **`art_cache` eviction is insertion-order, not LRU** — it evicts the
   oldest-*inserted* entry (`draai/library.py:264-265`), not the
@@ -295,7 +295,7 @@ Two different, overlapping shapes exist — know which one you're looking at:
 - **`CLAUDE.md` vs. code**: the documented behavior ("hands the URL to the
   user's own yt-dlp installation; downloads land in `<first
   folder>/Imported/` with `--embed-metadata --embed-thumbnail`") matches
-  the code exactly (`draai/youtube.py:49-55`) — no discrepancy found there.
+  the code exactly (`draai/importer.py:49-55`) — no discrepancy found there.
   The one gap found during this review is the unused `YT_URL_RE` noted
   above, which isn't mentioned in `CLAUDE.md` either way.
 
@@ -316,7 +316,7 @@ Two different, overlapping shapes exist — know which one you're looking at:
 - `draai/server.py:511-543` — `/api/folder`, `/api/folders_add`, `/api/folders_remove`.
 - `draai/server.py:698-752` — `serve_media` (Range support, raw byte streaming).
 - `draai/playlists.py:9-81` — full m3u playlist implementation.
-- `draai/youtube.py:14-72` — `YT_URL_RE` (unused), `yt_available`, `start_youtube_job`.
+- `draai/importer.py:14-72` — `YT_URL_RE` (unused), `yt_available`, `start_import_job`.
 - `player_ui.html:1239-1275` — `sortTracks`, `renderSongRows` (client-side sort/group).
 - `tests/test_draai.py:174-209` — tag-reading and multi-folder scan tests (`test_mp3_tags_and_art`, `test_flac_tags`, `test_scan_multiple_folders`).
 - `tests/test_draai.py:334-343` — `test_playlist_roundtrip`.

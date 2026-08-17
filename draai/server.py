@@ -15,7 +15,7 @@ from draai.config import save_config
 from draai.media import local_ip_facing
 from draai.library import get_art, scan_all, scan_folder
 from draai.analysis import get_analysis, prefetch_analysis
-from draai.youtube import YT_URL_RE, start_youtube_job, yt_available
+from draai.importer import YT_URL_RE, start_import_job, yt_available
 from draai.playlists import delete_playlist, list_playlists, load_playlist, save_playlist
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
@@ -715,13 +715,13 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 queue_remove(spk, body.get("no") or 0)
                 self.send_json({"ok": True})
-            elif path == "/api/youtube":
+            elif path == "/api/import":
                 url = (body.get("url") or "").strip()
                 if not YT_URL_RE.match(url) or len(url) > 500:
                     self.send_json({"error": "That doesn't look like a "
                                     "link."}, 400)
                     return
-                job_id = start_youtube_job(url)
+                job_id = start_import_job(url)
                 self.send_json({"job": job_id})
             elif path == "/api/cmd":
                 spk = speaker_by_uuid(body.get("speaker") or "")
@@ -1166,8 +1166,8 @@ async function loadQueue() {
   tbody.appendChild(frag);
 }
 
-/* -- YouTube -- */
-async function initYouTube() {
+/* -- Import -- */
+async function initImport() {
   try {
     const r = await api("/api/yt_available");
     $("ytCard").style.display = "block";
@@ -1183,13 +1183,13 @@ async function initYouTube() {
   } catch (e) {}
 }
 
-async function startYouTube() {
+async function startImport() {
   const url = $("ytUrl").value.trim();
   if (!url) return;
   $("ytBtn").disabled = true;
   setYtHint("Starting…", "working");
   try {
-    const r = await api("/api/youtube", {url});
+    const r = await api("/api/import", {url});
     if (ytTimer) clearInterval(ytTimer);
     ytTimer = setInterval(async () => {
       try {
@@ -1314,8 +1314,8 @@ $("seek").addEventListener("change", () => {
     cmd("seek", Math.round($("seek").value / 1000 * durSec));
   setTimeout(() => { seeking = false; }, 1200);
 });
-$("ytBtn").addEventListener("click", startYouTube);
-$("ytUrl").addEventListener("keydown", e => { if (e.key === "Enter") startYouTube(); });
+$("ytBtn").addEventListener("click", startImport);
+$("ytUrl").addEventListener("keydown", e => { if (e.key === "Enter") startImport(); });
 $("speaker").addEventListener("change", e => {
   currentSpeaker = e.target.value; restartStatus();
 });
@@ -1344,7 +1344,7 @@ $("shufBtn").addEventListener("click", () => {
 $("vol").addEventListener("change", e => cmd("volume", parseInt(e.target.value, 10)));
 
 loadState();
-initYouTube();
+initImport();
 </script>
 </body>
 </html>

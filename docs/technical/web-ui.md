@@ -4,7 +4,7 @@
 
 ## Purpose
 
-`player_ui.html` is the full-featured player interface: library browsing (albums/songs/queue/playlists), room control and grouping, EQ, sleep timer, YouTube import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
+`player_ui.html` is the full-featured player interface: library browsing (albums/songs/queue/playlists), room control and grouping, EQ, sleep timer, yt-dlp import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
 
 **Never hand-edit a top-level `player_ui.html`.** It is a git-ignored build artifact produced by `build.py` for the `.pyz`, and `_load_ui()` gives a file in the cwd precedence over the partials — so a stale one silently masks every change you make in `ui/`. If a UI edit appears to do nothing, check for one before debugging anything else.
 
@@ -108,7 +108,7 @@ Flow: `getArt()` (`player_ui.html:679-687`) loads the track art image, then:
 `draai` package resource → none). It is a phone-sized control surface —
 room switch + volume, transport, up-next queue (reorder/remove/jump), and
 library browse/search/add-to-queue — talking to the same `/api/*` endpoints
-as `player_ui.html`. It does not include grouping, EQ, sleep timer, YouTube
+as `player_ui.html`. It does not include grouping, EQ, sleep timer, yt-dlp
 import, the album-palette pipeline, or the vinyl deck; those stay
 `player_ui.html`-only. `/api/access` returns its URL as `remote` alongside
 the main `url`, and the QR code on `player_ui.html`'s fullscreen view points

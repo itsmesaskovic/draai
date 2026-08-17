@@ -28,7 +28,7 @@ Module map (all under `draai/`), one line each:
 | `draai/library.py` | Filesystem scan, ID3/MP4/FLAC tag + art parsing, track model (`scan_all`, `read_tags`, `get_art`) — `draai/library.py:274`, `draai/library.py:241`, `draai/library.py:257`. |
 | `draai/analysis.py` | ffmpeg-based loudness/band envelope analysis, disk cache — `draai/analysis.py:68`, `draai/analysis.py:110`. |
 | `draai/playlists.py` | M3U playlists as files in `<first folder>/Playlists/` — `draai/playlists.py:37`, `draai/playlists.py:58`. |
-| `draai/youtube.py` | Hands URLs to the user's own yt-dlp; imports audio into `<first folder>/Imported/` — `draai/youtube.py:24`. |
+| `draai/importer.py` | Hands URLs to the user's own yt-dlp; imports audio into `<first folder>/Imported/` — `draai/importer.py:24`. |
 | `draai/cast.py` | Google Cast (CASTV2) backend: mDNS discovery, TLS session, cast-specific play/queue/volume — `draai/cast.py:137`, `draai/cast.py:205`. |
 | `draai/backends.py` | Sonos backend (SSDP/SOAP/UPnP) + the backend dispatch layer that routes each call to Sonos or Cast, resume positions — `draai/backends.py:1-3`. |
 | `draai/server.py` | HTTP `Handler` (JSON API, media serving with Range, UI serving), QR generator, built-in `PAGE` fallback — `draai/server.py:1`, `draai/server.py:286`. |
@@ -58,7 +58,7 @@ library                          (library.py:5-7 imports draai.state, draai.cons
    ↑
 analysis, cast                   (analysis.py:8-10; cast.py:11-14 — cast has no dependency on backends)
    ↑
-youtube                          (youtube.py:8-11 imports state, media, library, and re-exports from analysis)
+importer                         (importer.py:8-11 imports state, media, library, and re-exports from analysis)
    ↑
 backends                         (backends.py:16-26 imports state, constants, util, media, cast)
    ↑
@@ -78,10 +78,10 @@ import that would let `state.py` or `constants.py` reach upward, and never
 let `server.py`/`__main__.py` be imported by anything else (they're roots,
 per `CLAUDE.md`'s hard rule 1).
 
-One wrinkle: `draai/youtube.py:82` re-exports analysis internals
+One wrinkle: `draai/importer.py:82` re-exports analysis internals
 (`_scale, _stream_envelope, _analyze, get_analysis, prefetch_analysis`)
 with the comment `# re-export during the split` — nothing in the package
-currently imports those names from `draai.youtube` (server.py imports them
+currently imports those names from `draai.importer` (server.py imports them
 straight from `draai.analysis`, `server.py:17`), so this looks like
 leftover scaffolding from the `sonos_player.py` → `draai/` split that can
 likely be deleted; see [Gotchas](#gotchas).
@@ -225,8 +225,8 @@ they travel with the music, not the app.
   ffmpeg jobs (`draai/analysis.py:126-135`).
 - Background work is always a `daemon=True` thread so it never blocks
   process exit: the boot warmup (`draai/__main__.py:129`), per-track
-  analysis jobs (`draai/analysis.py:130`), YouTube import jobs
-  (`draai/youtube.py:71`), and the queue-fill-in-background half of
+  analysis jobs (`draai/analysis.py:130`), yt-dlp import jobs
+  (`draai/importer.py:71`), and the queue-fill-in-background half of
   `play_tracks()` (`draai/backends.py:305`, guarded by
   `enqueue_generation` so a newer play request cancels a stale one still
   filling the queue).
@@ -241,16 +241,16 @@ stdlib module: `json`, `os`, `socket`, `ssl`, `struct`, `threading`,
 at runtime by `find_tool()` (`draai/media.py:26-34`, checks `shutil.which`
 then falls back to `/opt/homebrew/bin` and `/usr/local/bin`) and invoked
 as subprocesses. Their absence degrades a feature (no waveform analysis,
-no YouTube import) rather than breaking startup — `analysis.py:71-73` and
-`youtube.py:19-21,25-28` both surface a human-readable "brew install ..."
+no yt-dlp import) rather than breaking startup — `analysis.py:71-73` and
+`importer.py:19-21,25-28` both surface a human-readable "brew install ..."
 message instead of raising an import error.
 
 ## Gotchas
 
-- **`youtube.py`'s trailing re-export is dead weight from the split.**
-  `draai/youtube.py:82` re-exports five analysis symbols with the comment
+- **`importer.py`'s trailing re-export is dead weight from the split.**
+  `draai/importer.py:82` re-exports five analysis symbols with the comment
   `# re-export during the split`; nothing imports them through
-  `draai.youtube` today (`server.py` imports them from `draai.analysis`
+  `draai.importer` today (`server.py` imports them from `draai.analysis`
   directly). It's a candidate for deletion, not a load-bearing part of
   the DAG — but don't remove it without grepping for external/test
   imports first.
@@ -296,4 +296,4 @@ message instead of raising an import error.
 - `draai/media.py:26-34` — `find_tool()`.
 - `draai/analysis.py:12-16` — `ANALYSIS_DIR`, `ANALYSIS_VERSION`.
 - `draai/backends.py:309-317` — `load_positions()`.
-- `draai/youtube.py:82` — leftover re-export from the package split.
+- `draai/importer.py:82` — leftover re-export from the package split.

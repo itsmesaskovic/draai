@@ -26,7 +26,7 @@ sys.path.insert(0, ROOT)                    # so `import draai` (the package) re
 import types
 import draai
 import draai.state, draai.constants, draai.util, draai.config, draai.media
-import draai.library, draai.analysis, draai.youtube, draai.cast
+import draai.library, draai.analysis, draai.importer, draai.cast
 import draai.backends, draai.playlists, draai.server
 
 # `sp` = a flat namespace of the package's public API for the tests' sp.<name>
@@ -34,7 +34,7 @@ import draai.backends, draai.playlists, draai.server
 # (e.g. draai.backends.soap_call), since that's where the callers resolve them.
 sp = types.SimpleNamespace(__version__=draai.__version__)
 for _m in (draai.state, draai.constants, draai.util, draai.config, draai.media,
-           draai.library, draai.analysis, draai.youtube, draai.cast,
+           draai.library, draai.analysis, draai.importer, draai.cast,
            draai.backends, draai.playlists, draai.server):
     for _n in dir(_m):
         if not _n.startswith("__"):

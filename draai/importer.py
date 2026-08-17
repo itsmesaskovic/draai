@@ -1,4 +1,4 @@
-"""YouTube import via the user's own yt-dlp (optional)."""
+"""Media import via the user's own yt-dlp (optional)."""
 import itertools
 import os
 import re
@@ -27,7 +27,7 @@ def yt_available():
     return {"available": not missing, "missing": missing}
 
 
-def start_youtube_job(url):
+def start_import_job(url):
     ytdlp, ffmpeg = find_tool("yt-dlp"), find_tool("ffmpeg")
     if not ytdlp or not ffmpeg:
         raise RuntimeError("yt-dlp and ffmpeg are needed for this. In "

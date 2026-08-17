@@ -268,7 +268,7 @@ sources in order:
    complete standalone HTML/CSS/JS document) if both of the above fail —
    this is the "zero-file experience" fallback: a minimal but fully
    functional player (speaker list, folder scan, search, queue, transport
-   controls, YouTube import) that works even if `player_ui.html` is
+   controls, yt-dlp import) that works even if `player_ui.html` is
    missing or unreadable. Per `CLAUDE.md`, new HALCYON-level UI features
    belong only in `player_ui.html`, not `PAGE` — `PAGE` just has to keep
    working.
