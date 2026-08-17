@@ -111,11 +111,58 @@ function energyAt(sec){ if(!analysis) return null; const st=analysis.step||0.1, 
           ampL:analysis.ampL?g(analysis.ampL):g(analysis.amp),
           ampR:analysis.ampR?g(analysis.ampR):g(analysis.amp)}; }
 
+/* ---------------- playback clock ----------------
+   The engine reports position as H:MM:SS — whole seconds, because sec_to_hms does
+   int(n) and Sonos' RelTime is second-resolution anyway. Since that TRUNCATES, a
+   reading of P means the true position is somewhere in [P, P+1) — it is never ahead,
+   and on average half a second behind. The old code eased posSec toward the raw
+   reading, so it was continuously dragged ~0.5s late: the clock started accurate (on
+   play posSec=0) and got steadily worse, which is exactly how beat sync "lost the
+   song" after a while. At 150 BPM half a second is more than a whole beat.
+
+   So instead of trusting any single reading, treat each as a CONSTRAINT on the offset
+   between the local monotonic clock and track time:
+       offset = true - localTime  ∈  [P - t, P + 1 - t)
+   Polls land at arbitrary sub-second phases, so intersecting a handful of these
+   collapses the interval far below the one-second quantum. Network latency widens
+   each constraint honestly (the position was sampled somewhere between request and
+   response), and a small drift allowance keeps the window from closing tighter than
+   the two clocks can actually hold. */
+const CLK_DRIFT_PPM=250e-6;   // allowance for speaker-vs-browser crystal drift
+let clkLo=0, clkHi=0, clkHave=false, clkOff=null, clkLastObs=0;
+function clockReset(){ clkHave=false; clkOff=null; }
+function clockObserve(P,tSend,tRecv){
+  const tMid=(tSend+tRecv)/2, halfLat=Math.max(0,(tRecv-tSend)/2);
+  const lo=P-tMid-halfLat, hi=P+1-tMid+halfLat;
+  if(!clkHave){ clkLo=lo; clkHi=hi; clkHave=true; }
+  else{
+    const slack=CLK_DRIFT_PPM*Math.max(0,tMid-clkLastObs);
+    const a=Math.max(clkLo-slack,lo), b=Math.min(clkHi+slack,hi);
+    // An empty intersection means the two clocks have genuinely diverged, or there
+    // was a seek we did not see. Trust the newest reading rather than a stale fit.
+    if(a>=b){ clkLo=lo; clkHi=hi; } else { clkLo=a; clkHi=b; }
+  }
+  clkLastObs=tMid;
+  const mid=(clkLo+clkHi)/2;
+  // Snap on a first fix or a real jump; otherwise ease, so the clock never steps
+  // visibly mid-track — a jump would read as a missed beat.
+  // Ease gently (0.25, not 0.5): every correction nudges posSec, and a backward nudge
+  // is what the beat consumer has to tolerate. Smaller steps keep those well inside
+  // its threshold while still converging within a handful of polls.
+  if(clkOff==null || Math.abs(mid-clkOff)>1.0) clkOff=mid; else clkOff+=(mid-clkOff)*0.25;
+}
+function clockUncertainty(){ return clkHave ? (clkHi-clkLo)/2 : Infinity; }
+
 /* smooth playback clock (advance locally between 2s polls) + energy smoothing */
 let posSec=0, durSec=0, playing=false, last=performance.now();
 let sm={amp:0,low:0,mid:0,high:0};
 function tick(t){ const dt=Math.min(.05,(t-last)/1000); last=t;
-  if(playing && durSec>0) posSec=Math.min(durSec,posSec+dt);
+  if(playing && durSec>0){
+    // Once the offset is fitted, position comes from the monotonic clock, so it can
+    // neither drift nor lose time on a long frame. Local integration is only the
+    // fallback until the first fix lands.
+    posSec = clkOff!=null ? clamp(t/1000+clkOff,0,durSec) : Math.min(durSec,posSec+dt);
+  }
   // palette lerp (~1.4s cinematic)
   if(!REDUCE){ const k=1-Math.exp(-dt/0.42); for(const key of ["ac","ac2","bg1","bg2"]) for(let i=0;i<3;i++) pal[key][i]+=(palT[key][i]-pal[key][i])*k; applyPal(); }
   // energy
@@ -130,9 +177,14 @@ function tick(t){ const dt=Math.min(.05,(t-last)/1000); last=t;
   const prog=durSec>0?clamp(posSec/durSec,0,1):0;
   $("#posLabel").textContent=fmt(posSec); $("#durLabel").textContent=fmt(durSec);
   $("#npPos").textContent=fmt(posSec); $("#npDur").textContent=fmt(durSec);
-  drawWave(dockCv,prog); if($("#np").classList.contains("open")) drawWave(npCv,prog);
+  // The fullscreen modes are fixed/inset:0 and cover the dock, so redrawing the dock
+  // waveform underneath them is work nobody can see.
+  const fsOpen=FS_IDS.some(x=>$("#"+x).classList.contains("open"));
+  if(!fsOpen) drawWave(dockCv,prog);
+  if($("#np").classList.contains("open")) drawWave(npCv,prog);
   if($("#amp").classList.contains("open")) drawAmp(dt,t,prog);
   if($("#spec").classList.contains("open")) drawSpec(dt,t,prog);
+  if($("#drive").classList.contains("open")) drawDrive(dt,t,prog);
   requestAnimationFrame(tick);
 }
 function mkCanvas(sel){ const wrap=$(sel), cv=wrap.querySelector("canvas"), ctx=cv.getContext("2d"); return {wrap,cv,ctx}; }
@@ -155,7 +207,7 @@ function drawWave(o,prog){ if(!o.W) sizeCanvas(o); const {ctx,W,H}=o; ctx.clearR
   const px=prog*W; ctx.fillStyle=(o===npCv)?"#fff":PLAYHEAD; ctx.fillRect(px-1,0,2,H);
 }
 /* ---- shared full-screen switcher (np/amp/spec) ---- */
-const FS_IDS=["np","amp","spec"];
+const FS_IDS=["np","amp","spec","drive"];
 function openMode(id, sizers){
   FS_IDS.forEach(x=>$("#"+x).classList.remove("open"));
   $("#"+id).classList.add("open");

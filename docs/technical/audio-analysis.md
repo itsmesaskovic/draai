@@ -231,6 +231,34 @@ resolution-independent of track length.
   at 0. Playback, queueing, and every other feature are unaffected —
   analysis is purely additive to the visual layer.
 
+## Beat detection
+
+`detect_beats(low, mid, high, step)` returns `(beats, bpm)`: beat times in seconds, and a tempo (or `None`). The pipeline is onset novelty → adaptive-threshold onset picking → autocorrelation tempo estimate → confidence gate → least-squares grid fit.
+
+Three parts of it are counter-intuitive enough to be worth stating, each learned from a real failure:
+
+**The grid fit must not count off-beat onsets as beats.** `_fit_beat_grid` indexes gaps *independently* (`round(gap / period0)`), which is what makes it immune to a small error in the seed period — a 0.5% error still rounds every one-beat gap to exactly 1, forever. Indexing from a fixed anchor instead accumulates that error into the index itself and drifts. But the earlier version also wrapped that rounding in `max(1, ...)`, so an onset half a beat after the last one was charged a *whole* beat. On a frenchcore track with 178 such onsets the assigned span came to 868 beats against ~809 of music and a correct 199.7 BPM was "refined" to 216.2. Sub-beat onsets are now dropped before indexing (`BEAT_FIT_SUBBEAT`), ambiguous gaps are excluded from the regression (`BEAT_FIT_TOL`), and the result is clamped to ±2% of the seed (`BEAT_FIT_MAX_DRIFT`) — the fit corrects frame quantization, it never re-decides the tempo.
+
+**A soft autocorrelation peak can still be right.** Peak-to-mean is a poor confidence measure for rhythmically dense music: off-beat onsets flatten the peak. A real 200 BPM track produced the correct period and scored 1.204 against the 1.3 gate. Rather than lower the gate — which admits tempos that disagree with the onsets entirely — a soft peak is accepted when the **median inter-onset interval independently agrees** with it (`_tempo_trustworthy`, `BEAT_CONFIDENCE_FLOOR`, `BEAT_IOI_AGREE`). Two weak agreeing estimators beat one confident one.
+
+**Do not widen `BEAT_TEMPO_MIN_S` on synthetic evidence.** A 60-250 BPM sweep of synthetic pulse trains is perfectly clean at 0.24s, which makes widening look free. On real files it broke 4 of 10 tracks — 140.6 → 266.7 BPM, and one of the wrong answers still cleared the confidence gate. Clean pulse trains have no sub-beat onsets to alias against; real dance music is full of them. 200 BPM is a real ceiling, but a correct one beats a wider wrong one.
+
+## External beat trackers (optional)
+
+The built-in detector is the **fallback**, not the default. `_external_beats()` looks for a better tracker at runtime via `find_tool()`, in this order:
+
+1. `beat_this` (MIT, ISMIR 2024) — decoded to wav by ffmpeg first, because torchaudio can no longer read mp3 (it wants TorchCodec). Also needs `soundfile`, which is missing from its own dependency metadata. Uses `<config>/beat_this.ckpt` when present, which keeps `torch.load` on its safe local branch.
+2. `aubiotrack` (GPL-3.0) — reads mp3 directly. Invoked as a **subprocess only**; linking it would force DRAAI off MIT.
+3. The built-in detector.
+
+Any failure, timeout or malformed output falls through to the next level, so a broken install degrades rather than breaking analysis. The payload records which one produced the grid in `beat_source`.
+
+Measured over seven tracks from a real library: the built-in produced no tempo at all on four of them; `beat_this` produced a grid on all seven and locked onto real onsets roughly twice as often.
+
+**Only `beats` and `bpm` come from the external tracker.** Every other field — `amp`, `low`/`mid`/`high`, `ampL`/`ampR`, `peaks`, `sections` — is still DRAAI's own streaming envelope, so the visualizers' energy signals are unchanged whether a tracker is installed or not.
+
+**A single global `bpm` is wrong for a mix.** Measured on a 101-minute hardcore set, the real tempo per 10-minute block ran 96.8 / 166.7 / 176.5 x5 / 187.5 / 100.0 / 120.0 / 272.7 — the tracker followed all of it correctly, and collapsing 13,141 beats to one median reported "176 BPM" for a file that is near 176 for about half its length. The UI therefore reads tempo back out of the beat *times* locally (`driveLocalBpm` in `ui/modes/drive/drive.js`): the median gap over a window around the playhead. On a normal track that equals the global value; on a mix it follows the music.
+
 ## Gotchas
 
 - **`ANALYSIS_VERSION` bump is the only invalidation path.** There's no

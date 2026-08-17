@@ -46,6 +46,10 @@ audio analysis, never a fake signal.
     <td width="50%"><a href="docs/images/fft-meter.jpg"><img src="docs/images/fft-meter.jpg" alt="Spectrum analyzer"></a><br><sub><b>Spectrum</b> · analyzer (<code>S</code>)</sub></td>
   </tr>
   <tr>
+    <td width="50%"><a href="docs/images/drive.png"><img src="docs/images/drive.png" alt="DRIVE — 80s arcade driving visualizer"></a><br><sub><b>DRIVE</b> · the music drives everything (<code>D</code>)</sub></td>
+    <td width="50%"><a href="docs/images/car-nsx-white.png"><img src="docs/images/car-nsx-white.png" alt="Swappable cars"></a><br><sub><b>Swap the car</b> · drop-in sprites (<code>C</code>)</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><a href="docs/images/songs-grouped-by-folder.png"><img src="docs/images/songs-grouped-by-folder.png" alt="Songs grouped by folder"></a><br><sub><b>Library</b> · grouped by folder</sub></td>
     <td width="50%"><a href="docs/images/queue.png"><img src="docs/images/queue.png" alt="The queue"></a><br><sub><b>Queue</b> · drag to reorder, play next</sub></td>
   </tr>
@@ -186,6 +190,12 @@ fix it before moving on.
 - Full-screen visualizers: a cinematic now-playing view, twin VU meters
   (press `A`) and a spectrum analyzer (press `S`) — modeled from the track's
   audio analysis, never a fake signal
+- **DRIVE** (press `D`): an 80s arcade driving scene where every element is
+  driven by the music — the sun and tail lights pulse on detected beats, the
+  road speed follows loudness and tempo, roadside palms are planted by the
+  beat, and which side they grow on follows the stereo image
+- Swap the car in DRIVE: three ship with it, and you can drop your own into a
+  `cars/` folder as a small JSON file — no rebuild, no code (press `C`)
 - Vinyl deck view: a spinning record with your artwork as the label
 - Media keys: play/pause from your keyboard, artwork in macOS now-playing
 - Library from one or many folders — add them with a built-in folder picker,
@@ -213,6 +223,32 @@ brew install ffmpeg
 
 This enables the waveform / audio-analysis visuals.
 Without it, the app works fine — those visuals simply stay off.
+
+### A better beat detector (optional)
+
+DRAAI has its own beat detection built in, in pure Python. It works, but it
+gives up on some material — dense hardcore, live sets, anything where the
+onsets are irregular — and then DRIVE's beat effects fall back to guessing
+from the low end.
+
+If you install a dedicated beat tracker, DRAAI finds it automatically and
+uses it instead. Nothing is required and nothing changes if you skip this:
+
+```
+pipx install git+https://github.com/CPJKU/beat_this.git
+pipx inject beat-this soundfile
+```
+
+Preference order is `beat_this` → `aubiotrack` → the built-in detector, and a
+failure at any level quietly falls through to the next. `beat_this` is MIT and
+actively developed; `aubio` (`brew install aubio`) also works and is smaller,
+but is GPL and hasn't had a release since 2019 — DRAAI only ever invokes it as
+a separate program, never links it, so DRAAI stays MIT either way.
+
+**One thing worth knowing:** on first use `beat_this` downloads its model from
+the authors' server. To avoid that, put the checkpoint at
+`~/Library/Application Support/SonosMP3Player/beat_this.ckpt` and DRAAI passes
+it directly — no download, and no unpickling of a file fetched over the wire.
 
 ### Start at login (optional)
 
@@ -242,6 +278,52 @@ website's terms of service and/or copyright law in your country. The
 authors of this project do not endorse or encourage downloading copyrighted
 content, and how you use your own yt-dlp installation is your responsibility
 alone.
+
+## Your own car in DRIVE
+
+Three cars ship with DRIVE. Press `C` — or the car button in the DRIVE header —
+to switch; your choice is remembered.
+
+<table>
+  <tr>
+    <td width="33%"><a href="docs/images/car-delorean.png"><img src="docs/images/car-delorean.png" alt="DeLorean"></a><br><sub><b>DeLorean</b> · built in</sub></td>
+    <td width="33%"><a href="docs/images/car-nsx-red.png"><img src="docs/images/car-nsx-red.png" alt="Honda NSX, red"></a><br><sub><b>NSX</b> · red</sub></td>
+    <td width="33%"><a href="docs/images/car-nsx-white.png"><img src="docs/images/car-nsx-white.png" alt="Honda NSX, white"></a><br><sub><b>NSX</b> · white</sub></td>
+  </tr>
+</table>
+
+Add your own by dropping a JSON file into:
+
+```
+~/Library/Application Support/SonosMP3Player/cars/
+```
+
+No rebuild, no code — reopen DRIVE and it appears in the picker. The format is
+one character per pixel:
+
+```json
+{
+  "name": "My Car",
+  "w": 36, "h": 43,
+  "flare": "9",
+  "pal": { "0": "#0a0c10", "9": "#e8a020", "1": "#d81030" },
+  "rows": ["....0111111", "…one string per row…"]
+}
+```
+
+- `rows` is the **left half only** — it's mirrored at draw time, so the car is
+  symmetric by construction and you draw half as many pixels. `"."` is
+  transparent, and anything meant to sit on the centreline must reach the last
+  column or the mirror leaves a seam.
+- `pal` maps single characters to colours. `rgba(...)` works, and is how the
+  glass and the ground shadow let the road show through.
+- `flare` names the one palette key that pulses on the beat — the indicators.
+  Keep it to a handful of pixels: point it at a large area and the whole car
+  strobes instead of the lamps.
+
+Files are validated on load; a malformed one is skipped rather than breaking the
+mode. They're data, never code — the UI plots them as coloured rectangles, so
+there is nothing executable in the path.
 
 ## The interface
 

@@ -1,9 +1,16 @@
 /* ---------------- status ---------------- */
-function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
+function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.state;
   durSec=parseTime(A.status.duration); const np=parseTime(A.status.position);
-  if(Math.abs(np-posSec)>1.6 || !playing) posSec=np;              // hard snap on seek/track-change/paused
-  else posSec += (np-posSec)*SYNC_NUDGE;                          // else ease out sub-threshold drift (C1)
-  playing=(st==="PLAYING"); if("mediaSession" in navigator){ try{ navigator.mediaSession.playbackState=playing?"playing":"paused"; if(durSec>0) navigator.mediaSession.setPositionState({duration:durSec,position:Math.min(posSec,durSec),playbackRate:1}); }catch(e){} }
+  const wasPlaying=playing;
+  playing=(st==="PLAYING");
+  // Feed the reading to the clock fit rather than easing posSec toward it: the value
+  // is truncated to whole seconds, so easing toward it dragged playback ~0.5s late.
+  if(!playing){ clockReset(); posSec=np; }                        // paused/stopped: the reading IS the position
+  else{
+    if(!wasPlaying) clockReset();                                 // resume invalidates the previous fit
+    if(tSend!=null) clockObserve(np,tSend,tRecv);
+    if(clkOff==null) posSec=np;                                   // until the first fix lands
+  } if("mediaSession" in navigator){ try{ navigator.mediaSession.playbackState=playing?"playing":"paused"; if(durSec>0) navigator.mediaSession.setPositionState({duration:durSec,position:Math.min(posSec,durSec),playbackRate:1}); }catch(e){} }
   const pp=playing?'<path d="M7 5h3v14H7zM14 5h3v14h-3z"/>':'<path d="M8 5v14l11-7z"/>';
   $("#playIcon").innerHTML=pp; $("#playBtn").querySelector(".ic").classList.toggle("fill",playing);
   $("#npPlay").querySelector(".ic").innerHTML=pp; $("#npPlay").querySelector(".ic").classList.toggle("fill",playing);
@@ -21,6 +28,8 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
   $("#specPlay").querySelector(".ic").innerHTML=pp; $("#specPlay").querySelector(".ic").classList.toggle("fill",playing);
   $("#specSpeaker").textContent=spk;
   $("#specTitle").textContent=A.status.title||"Nothing playing";
+  $("#driveSpeaker").textContent=spk;
+  $("#driveTitle").textContent=A.status.title||"Nothing playing";
   if(!knobDrag){ setKnob($("#knobVol"),A.status.volume,0,100); $("#volVal").textContent=A.status.volume; }
   // resolve current track id from the ids WE queued, else title match
   const qno=(A.status.track_no||1)-1;
@@ -38,9 +47,9 @@ function applyStatus(s){ A.status=s||A.status; const st=A.status.state;
   if(cid!=null && String(cid)!==String(A.curId)){ A.curId=cid; onTrackChange(cid); }
 }
 function onTrackChange(id){ const t=A.tracks.find(x=>String(x.id)===String(id));
-  getArt(id); loadAnalysis(id); posSec=parseTime(A.status.position);
+  getArt(id); loadAnalysis(id); posSec=parseTime(A.status.position); clockReset();
   const title=(t&&t.title)||A.status.title||"Nothing playing", artist=(t&&t.artist)||"";
-  $("#npTitle").textContent=title; $("#npArtist").textContent=artist; $("#ampArtist").textContent=artist; $("#specArtist").textContent=artist; if("mediaSession" in navigator){ try{ navigator.mediaSession.metadata=new MediaMetadata({title:title,artist:artist||"",album:"DRAAI",artwork:(t&&t.has_art&&!DEMO)?[{src:"/api/art?id="+enc(id),sizes:"512x512"}]:[]}); }catch(e){} }
+  $("#npTitle").textContent=title; $("#npArtist").textContent=artist; $("#ampArtist").textContent=artist; $("#specArtist").textContent=artist; $("#driveArtist").textContent=artist; if("mediaSession" in navigator){ try{ navigator.mediaSession.metadata=new MediaMetadata({title:title,artist:artist||"",album:"DRAAI",artwork:(t&&t.has_art&&!DEMO)?[{src:"/api/art?id="+enc(id),sizes:"512x512"}]:[]}); }catch(e){} }
   // kinetic type swap
   const meta=$("#npMeta"); meta.classList.remove("swap"); void meta.offsetWidth; if(!REDUCE) meta.classList.add("swap");
   if(A.view!=="queue") renderContent();
@@ -49,9 +58,18 @@ function setSlider(el,v){ el.value=v; el.style.setProperty("--v",v+"%"); }
 
 /* ---------------- polling ---------------- */
 let pollTimer=null;
-function startPolling(){ clearInterval(pollTimer); poll(); pollTimer=setInterval(poll,2000); }
+/* 1900ms, not 2000. The clock fit narrows its estimate by intersecting readings taken
+   at DIFFERENT sub-second phases, and position advances one second per second — so an
+   exactly 2000ms cadence would sample the same phase every time and the interval would
+   never close. 1900 walks the phase 100ms per poll, sweeping a full second in ten. */
+function startPolling(){ clearInterval(pollTimer); poll(); pollTimer=setInterval(poll,1900); }
 async function poll(){ if(!A.speaker)return;
-  try{ applyStatus(await api("/api/status?speaker="+enc(A.speaker.uuid))); }catch(e){}
+  // Bracket the request so the clock knows WHEN the position was sampled — the
+  // reading is valid somewhere between sending and receiving, and that width is
+  // folded into the constraint rather than assumed away.
+  try{ const tSend=performance.now()/1000;
+       const s=await api("/api/status?speaker="+enc(A.speaker.uuid));
+       applyStatus(s,tSend,performance.now()/1000); }catch(e){}
   try{ const q=await api("/api/queue?speaker="+enc(A.speaker.uuid)); A.queue=q.items||[];
     $("#qCount").textContent=A.queue.length||""; if(A.view==="queue")renderContent(); }catch(e){}
 }
@@ -65,7 +83,7 @@ async function guard(fn){ try{ return await fn(); }catch(e){ toast(e.message||St
 async function cmd(action,value){ if(!A.speaker)return toast("Select a room first.");
   await guard(async()=>{ await api("/api/cmd",{speaker:A.speaker.uuid,action,value}); poll(); }); }
 async function playTracks(ids){ if(!A.speaker)return toast("Select a room first.");
-  await guard(async()=>{ await api("/api/play",{speaker:A.speaker.uuid,ids}); A.queueIds=ids.slice(); posSec=0; playing=true; poll(); toast(`Playing ${ids.length} track${ids.length!==1?"s":""}`,true); }); }
+  await guard(async()=>{ await api("/api/play",{speaker:A.speaker.uuid,ids}); A.queueIds=ids.slice(); posSec=0; clockReset(); playing=true; poll(); toast(`Playing ${ids.length} track${ids.length!==1?"s":""}`,true); }); }
 async function enqueue(ids){ if(!A.speaker)return toast("Select a room first.");
   await guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids}); A.queueIds.push(...ids); poll(); toast("Added to queue",true); }); }
 
@@ -237,7 +255,15 @@ async function ytGet(){ const url=$("#ytInput").value.trim(); if(!url)return;
 async function pollYt(job){ try{ const s=await api("/api/yt_status?id="+enc(job)); const el=ytJobEls[job];
   if(s.status==="done"){ el.innerHTML=`<svg class="ic" viewBox="0 0 24 24" style="width:13px;color:rgb(var(--ac))"><path d="M20 6 9 17l-5-5"/></svg><span style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title||"Added")}</span>`;
     toast((s.title||"Track")+" added to library",true); await refreshTracks(); setTimeout(()=>el.remove(),4000); return; }
-  if(s.status==="error"){ el.remove(); toast(s.error||"Download failed"); return; }
+  if(s.status==="error"){
+    // Leave a PERSISTENT, dismissible error chip. A background download can fail
+    // minutes after you paste the link, long after any toast would be gone — so a
+    // vanishing toast read as "nothing happened". This stays until you click it.
+    el.className="chip err"; el.title="Click to dismiss";
+    el.innerHTML=`<svg class="ic" viewBox="0 0 24 24" style="width:13px"><path d="M12 8v5M12 16v.5M12 3l9 16H3z"/></svg><span style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.error||"Download failed")}</span>`;
+    el.style.cursor="pointer"; el.onclick=()=>el.remove();
+    toast(s.error||"Download failed"); return;
+  }
   setTimeout(()=>pollYt(job),1500);
 }catch(e){ setTimeout(()=>pollYt(job),2000); } }
 
@@ -288,7 +314,7 @@ function wire(){
     if(slp){ A.sleepMin=+slp.dataset.sleep; renderSleep(); cmd("sleep",A.sleepMin); return; }
     if(alb){ A.albumKey=alb.dataset.album; renderContent(); return; }
     if(play){ playTracks([play.dataset.play]); return; }
-    if(jump){ guard(async()=>{ await api("/api/queue_jump",{speaker:A.speaker.uuid,no:+jump.dataset.jump}); posSec=0;playing=true; poll(); }); return; }
+    if(jump){ guard(async()=>{ await api("/api/queue_jump",{speaker:A.speaker.uuid,no:+jump.dataset.jump}); posSec=0;clockReset();playing=true; poll(); }); return; }
     if(c){ cmd(c.dataset.cmd); return; }
     if(t("#backCrumb")){ A.albumKey=null; renderContent(); return; }
     if(t("#playAlbum")){ const a=A.albums.find(x=>x.key===A.albumKey); if(a)playTracks(a.tracks.map(x=>x.id)); return; }
@@ -318,7 +344,7 @@ function wire(){
     const nx=A.speakers[(i+1)%A.speakers.length]; selectRoom(nx.uuid); });
   // seek (both waves)
   $$(".wave").forEach(w=>w.addEventListener("click",e=>{ if(!durSec)return; const r=w.getBoundingClientRect();
-    posSec=clamp((e.clientX-r.left)/r.width,0,1)*durSec;
+    posSec=clamp((e.clientX-r.left)/r.width,0,1)*durSec; clockReset();
     cmd("seek",Math.round(posSec)); }));
   // fullscreen
   $("#expandBtn").addEventListener("click",openNp);
@@ -337,6 +363,15 @@ function wire(){
   $("#specToAmp").addEventListener("click",openAmp);
   $("#specClose").addEventListener("click",()=>$("#spec").classList.remove("open"));
   $("#specPlay").addEventListener("click",togglePlay);
+  // drive mode
+  $("#driveBtn").addEventListener("click",openDrive);
+  $("#npToDrive").addEventListener("click",openDrive);
+  $("#ampToDrive").addEventListener("click",openDrive);
+  $("#specToDrive").addEventListener("click",openDrive);
+  $("#driveToNp").addEventListener("click",openNp);
+  $("#driveToAmp").addEventListener("click",openAmp);
+  $("#driveToSpec").addEventListener("click",openSpec);
+  $("#driveClose").addEventListener("click",()=>$("#drive").classList.remove("open"));
   $("#lampToggle").addEventListener("click",()=>{ ampLamp=!ampLamp; $("#lampToggle").classList.toggle("on",ampLamp); $("#amp").classList.toggle("lampon",ampLamp); });
   // popovers
   $("#eqBtn").addEventListener("click",e=>{ e.stopPropagation(); $("#sleepPop").classList.remove("open"); $("#eqPop").classList.toggle("open"); });
@@ -365,13 +400,21 @@ function wire(){
   document.addEventListener("keydown",e=>{ if(e.target.tagName==="INPUT")return;
     if(e.code==="Space"){ e.preventDefault(); cmd(A.status.state==="PLAYING"?"pause":"resume"); }
     else if(e.key==="ArrowRight"&&e.shiftKey)cmd("next"); else if(e.key==="ArrowLeft"&&e.shiftKey)cmd("prev");
-    else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $("#spec").classList.remove("open"); $$(".pop").forEach(p=>p.classList.remove("open")); }
-    else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")||$("#spec").classList.contains("open")){ openNp(); } else $("#expandBtn").click(); }
+    else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $("#spec").classList.remove("open"); $("#drive").classList.remove("open"); $$(".pop").forEach(p=>p.classList.remove("open")); }
+    else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")||$("#spec").classList.contains("open")||$("#drive").classList.contains("open")){ openNp(); } else $("#expandBtn").click(); }
     else if(e.key==="a"||e.key==="A"){ if($("#amp").classList.contains("open")) closeAmp(); else openAmp(); }
-    else if(e.key==="s"||e.key==="S"){ if($("#spec").classList.contains("open")) $("#spec").classList.remove("open"); else openSpec(); } });
+    else if(e.key==="s"||e.key==="S"){ if($("#spec").classList.contains("open")) $("#spec").classList.remove("open"); else openSpec(); }
+    else if(e.key==="d"||e.key==="D"){ if($("#drive").classList.contains("open")) $("#drive").classList.remove("open"); else openDrive(); }
+    // C cycles the DRIVE car, but only while DRIVE is on screen — elsewhere it stays free
+    else if((e.key==="c"||e.key==="C") && $("#drive").classList.contains("open")){ driveCycleCar(); } });
+  // car picker: the button toggles the list, a click outside dismisses it
+  $("#driveCarBtn").addEventListener("click",e=>{ e.stopPropagation(); $("#carPick").classList.toggle("open"); });
+  document.addEventListener("click",e=>{ const p=$("#carPick");
+    if(p && p.classList.contains("open") && !p.contains(e.target)) p.classList.remove("open"); });
   addEventListener("resize",()=>{ sizeCanvas(dockCv); if($("#np").classList.contains("open"))sizeCanvas(npCv);
     if($("#amp").classList.contains("open")){ sizeCv(vuLc); sizeCv(vuRc); sizeCanvas(ampCv); }
-    if($("#spec").classList.contains("open")){ sizeCanvas(specC); sizeCanvas(specW2); } });
+    if($("#spec").classList.contains("open")){ sizeCanvas(specC); sizeCanvas(specW2); }
+    if($("#drive").classList.contains("open")){ sizeDriveCanvas(); } });
 }
 function toggleShuffle(){ A.shuffle=!A.shuffle; $("#shufBtn").classList.toggle("on",A.shuffle); $("#npShuf").classList.toggle("on",A.shuffle);
   const st=$("#shuffleToggle"); if(st)st.classList.toggle("on",A.shuffle); cmd("shuffle",A.shuffle); }
@@ -481,6 +524,7 @@ async function boot(){
   dockCv=mkCanvas("#dockWave"); npCv=mkCanvas("#npWave"); sizeCanvas(dockCv);
   ampCv=mkCanvas("#ampWave"); vuLc=mkCv("vuL"); vuRc=mkCv("vuR");
   specC=mkCanvas(".specstage"); specW2=mkCanvas("#specWave");
+  driveC=mkCanvas(".drivestage");
   applyPal(); wire(); renderSleep(); requestAnimationFrame(tick);
   try{ const r=await fetch("/api/state"); if(!r.ok)throw 0; }catch(e){ DEMO=true; }
   if(DEMO){ $("#demoBadge").classList.remove("hidden"); toast("Demo mode — no engine detected. Everything works on fake data; connect DRAAI to control real speakers.",true); }
@@ -645,7 +689,7 @@ $("#plList").addEventListener("click",e=>{
   const d=e.target.closest("[data-pldel]");
   if(d){ guard(async()=>{ const r=await api("/api/playlist_delete",{name:d.dataset.pldel}); A.playlists=r.playlists||[]; renderPlaylists(); toast("Playlist removed",true); }); return; }
   const p=e.target.closest("[data-plname]");
-  if(p){ guard(async()=>{ const r=await api("/api/playlist_load",{speaker:A.speaker.uuid,name:p.dataset.plname,mode:"play"}); toast("Playing "+r.found+" of "+r.total+" tracks",true); posSec=0; playing=true; poll(); }); }
+  if(p){ guard(async()=>{ const r=await api("/api/playlist_load",{speaker:A.speaker.uuid,name:p.dataset.plname,mode:"play"}); toast("Playing "+r.found+" of "+r.total+" tracks",true); posSec=0; clockReset(); playing=true; poll(); }); }
 });
 /* ---- queue drag to reorder ---- */
 let dragRow=null, dragFrom=0;
@@ -709,7 +753,7 @@ $("#themeBtn").addEventListener("click",()=>{
 let prefsTimer=null;
 function savePrefs(){
   clearTimeout(prefsTimer);
-  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
+  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
 }
 async function loadPrefs(){
   try{ const p=await api("/api/prefs");
@@ -717,6 +761,7 @@ async function loadPrefs(){
     if(p.group)A.group=p.group;
     if(p.sort)A.sort=p.sort;
     if(p.dir)A.dir=p.dir;
+    if(p.driveCar)A.driveCar=p.driveCar;
     if(Array.isArray(p.collapsed))A.collapsed=new Set(p.collapsed);
   }catch(e){}
   applyTheme();

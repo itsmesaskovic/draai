@@ -7,7 +7,6 @@ function openAmp(){ $("#amp").classList.toggle("lampon",ampLamp); openMode("amp"
 function closeAmp(){ $("#amp").classList.remove("open"); }
 /* ---- amp meter tuning (A/B/C) ---- */
 const VU_LATENCY = 0.0;    // s — meter energy read offset vs the clock (C2); room-align knob, 0 = off
-const SYNC_NUDGE = 0.25;   // fraction of sub-threshold drift corrected per poll (C1)
 const VU_DB_FLOOR = -38;   // dB — bottom of the perceptual window (B)
 const VU_EPS = 1e-3;       // log floor (B)
 function vuMap(v){ const db = 20*Math.log10(Math.max(v, VU_EPS));

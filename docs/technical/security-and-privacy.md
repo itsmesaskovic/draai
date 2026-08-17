@@ -69,11 +69,27 @@ asserts the assembled UI contains no `https://`, no `@import`/`<link>`/external
 deliberately uses no `localStorage`/`sessionStorage` either — preferences round-trip
 through the engine so there's a single, local source of truth.
 
-**The one deliberate egress: yt-dlp.** The optional import box hands a URL *you
-pasted* to *your own* yt-dlp install (`CLAUDE.md` rule 4 — no site-specific
-downloader code ships here). That request is user-initiated and uses a tool you
-installed yourself. It is the only path by which DRAAI reaches beyond your LAN,
-and only when you ask it to.
+**Egress via optional tools you install.** DRAAI's own code opens no internet
+connection — the inventory above is complete for the engine as shipped. Two
+*optional* tools can reach beyond the LAN, and neither is installed by default,
+required for any feature, or bundled: DRAAI detects them at runtime with
+`find_tool()` and works without them.
+
+| Tool | When it reaches out | Notes |
+| --- | --- | --- |
+| `yt-dlp` | You paste a URL and press import | User-initiated per request. `CLAUDE.md` rule 4 — no site-specific downloader code ships here. |
+| `beat_this` | First analysis of a track, to fetch its model **once** | Not per-request and not visible in the UI, so it is called out here explicitly. Avoid it entirely by placing the checkpoint at `<config>/beat_this.ckpt` — DRAAI then passes `--model <path>` and the download path never runs. |
+
+The `beat_this` case is the one worth stating plainly, because it is the only
+egress in DRAAI that is not directly triggered by a user action. It is a model
+download from the authors' server, unauthenticated and without a checksum. On
+torch < 2.6 that file is unpickled, which is arbitrary code execution if the
+server or the transport is ever compromised; on torch >= 2.6 `weights_only`
+defaults to true and the risk is limited to a corrupt model. Pinning a local
+checkpoint removes the question either way, and is what the README recommends.
+
+Neither tool changes the guarantee for a default install: **with nothing
+optional installed, no DRAAI process ever contacts the internet.**
 
 ## Threat model
 

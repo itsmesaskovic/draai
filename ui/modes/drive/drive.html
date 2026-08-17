@@ -1,0 +1,23 @@
+<!-- DRIVE — 80s OutRun-style visualizer mode. Three pixel-art states driven entirely
+     by the real energy envelope (never a timer/Math.random for a musical event):
+     title, OutRun driving (with a boss-palette arena on a loud closing section),
+     high-score end screen. Beat impact lives in world elements (tail lights, sun
+     core, road edges, speed lines) — the frame itself never translates. Rendering
+     happens in drive.js into a low-res backing buffer blitted onto #driveCanvas —
+     desktop showpiece, always dark. -->
+<section class="drive" id="drive">
+  <div class="drivehead">
+    <div class="lbl">DRIVE · <b id="driveSpeaker">—</b></div>
+    <b id="driveTitle" class="hidden"></b><small id="driveArtist" class="hidden"></small>
+    <div style="display:flex;gap:8px;margin-left:auto">
+      <button class="iconbtn" id="driveToNp" title="Now playing view (F)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.6"></circle></svg></button>
+      <button class="iconbtn" id="driveToAmp" title="Amplifier view (A)"><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="8" cy="12" r="2.4"></circle><circle cx="16" cy="12" r="2.4"></circle></svg></button>
+      <button class="iconbtn" id="driveToSpec" title="Spectrum view (S)"><svg class="ic" viewBox="0 0 24 24"><path d="M4 20V11M9 20V4M14 20V13M19 20V7"></path></svg></button>
+      <button class="iconbtn carbtn" id="driveCarBtn" title="Change car (C)"><svg class="ic" viewBox="0 0 24 24"><path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v5h-3v-2H6v2H3z"></path><circle cx="7.5" cy="15.5" r="1.2"></circle><circle cx="16.5" cy="15.5" r="1.2"></circle></svg><span id="driveCarName"></span></button>
+      <button class="iconbtn" id="driveClose" title="Close (Esc)"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"></path></svg></button>
+    </div>
+  </div>
+  <div class="drivestage"><canvas id="driveCanvas"></canvas></div>
+  <!-- car picker: populated at runtime from the built-in car + <config>/cars/*.json -->
+  <div class="carpick" id="carPick" role="listbox" aria-label="Car"></div>
+</section>
