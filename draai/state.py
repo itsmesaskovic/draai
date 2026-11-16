@@ -23,3 +23,6 @@ positions = {}
 positions_lock = threading.Lock()
 _positions_dirty = [False]
 yt_jobs = {}
+listening = {}             # track id -> int seconds listened (listening.json)
+listening_lock = threading.Lock()
+_listening_dirty = [False]

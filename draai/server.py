@@ -19,8 +19,9 @@ from draai.importer import YT_URL_RE, start_import_job, yt_available
 from draai.playlists import delete_playlist, list_playlists, load_playlist, save_playlist
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
+from draai.listening import listened_snapshot, status_and_observe
 from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms,
-    get_status, group_join, group_leave, play_tracks, queue_jump, queue_move,
+    group_join, group_leave, play_tracks, queue_jump, queue_move,
     queue_remove, refresh_speakers, seek_to, set_eq, set_room_volume, set_shuffle,
     set_sleep, set_volume, speaker_by_uuid)
 
@@ -412,13 +413,15 @@ class Handler(BaseHTTPRequestHandler):
                                           + " " + t.get("album", "") + " "
                                           + t["folder"]).lower()
                                     for w in words)]
+                heard = listened_snapshot()
                 out = [{"id": t["id"], "title": t["title"],
                         "artist": t.get("artist", ""),
                         "album": t.get("album", ""),
                         "has_art": t.get("has_art", False),
                         "added": t.get("added", 0),
                         "dir": os.path.dirname(t["path"]),
-                        "folder": t["folder"]} for t in items[:3000]]
+                        "folder": t["folder"],
+                        "listened": heard.get(t["id"], 0)} for t in items[:3000]]
                 total = len(items)
             self.send_json({"tracks": out, "total": total})
         elif path.startswith("/api/status"):
@@ -428,7 +431,22 @@ class Handler(BaseHTTPRequestHandler):
             if not spk:
                 self.send_json({"error": "unknown speaker"}, 404)
                 return
-            self.send_json(get_status(spk))
+            self.send_json(status_and_observe(spk))
+        elif path == "/api/most_played":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                limit = max(1, min(500, int(qs.get("limit", ["20"])[0])))
+            except ValueError:
+                limit = 20
+            heard = listened_snapshot()
+            with state_lock:
+                ranked = [t for t in tracks if heard.get(t["id"], 0) > 0]
+                ranked.sort(key=lambda t: (-heard[t["id"]], t["title"].lower()))
+                out = [{"id": t["id"], "title": t["title"],
+                        "artist": t.get("artist", ""),
+                        "has_art": t.get("has_art", False),
+                        "listened": heard[t["id"]]} for t in ranked[:limit]]
+            self.send_json({"tracks": out, "total": len(ranked)})
         elif path.startswith("/api/queue"):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             spk = speaker_by_uuid(qs.get("speaker", [""])[0])
