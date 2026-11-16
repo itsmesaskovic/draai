@@ -15,6 +15,7 @@ import struct
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -1311,10 +1312,13 @@ class DraaiTests(unittest.TestCase):
         L.get_status = fake_status
         sp.speakers[:] = groups
         try:
-            L.watch_once(now=1000)     # must not raise; cast w/o session skipped
+            # last-seen stamps use the real monotonic clock, so must "now"
+            # (a fixed value only works on hosts with a long uptime)
+            t = time.monotonic()
+            L.watch_once(now=t)        # must not raise; cast w/o session skipped
             self.assertEqual(asked, ["BAD", "OK"])
             asked.clear()
-            L.watch_once(now=1001)     # OK was just sampled: skipped
+            L.watch_once(now=t + 1)    # OK was just sampled: skipped
             self.assertEqual(asked, ["BAD"])
         finally:
             L.get_status = old_status
