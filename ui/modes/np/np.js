@@ -148,3 +148,27 @@ function npVidNudge(dir){ A.npVidOff=clamp(Math.round((A.npVidOff+dir*0.025)*100
 $$("[data-npoff]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); npVidNudge(+b.dataset.npoff); }));
 document.addEventListener("keydown",e=>{ if(e.target.tagName==="INPUT" || !NPV.shown) return;
   if(e.key==="[") npVidNudge(-1); else if(e.key==="]") npVidNudge(1); });
+
+/* ---- Split handle ----
+   #npSplit sits in the middle grid column of the np-video layout. Dragging it sets
+   A.npSplit, the video column's share of the two columns (prefs key npSplit, 0.25..0.75,
+   default 0.5); double-click resets to half and half, arrow keys move it 2 %. */
+function applyNpSplit(){ const np=$("#np"), l=Math.round(A.npSplit*1000)/10;   // fr shares summing to 100
+  np.style.setProperty("--npl",l+"fr"); np.style.setProperty("--npr",(100-l)+"fr");
+  requestAnimationFrame(()=>{ if(npCv) sizeCanvas(npCv); if(npSpecC) sizeCanvas(npSpecC); }); }
+function npSplitSet(f){ A.npSplit=Math.round(clamp(f,0.25,0.75)*1000)/1000; applyNpSplit(); }
+(function npSplitWire(){ const h=$("#npSplit"), np=$("#np");
+  let drag=null;
+  h.addEventListener("pointerdown",e=>{ if(e.button!==0) return; e.preventDefault(); e.stopPropagation();
+    const body=h.parentElement, r=body.getBoundingClientRect(), cs=getComputedStyle(body);
+    const left=r.left+parseFloat(cs.paddingLeft), avail=r.width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-h.offsetWidth;
+    drag={left,avail,half:h.offsetWidth/2}; h.setPointerCapture(e.pointerId); np.classList.add("npsplitting"); });
+  h.addEventListener("pointermove",e=>{ if(!drag || drag.avail<=0) return;
+    npSplitSet((e.clientX-drag.left-drag.half)/drag.avail); });
+  const end=()=>{ if(!drag) return; drag=null; np.classList.remove("npsplitting"); savePrefs(); };
+  h.addEventListener("pointerup",end); h.addEventListener("pointercancel",end);
+  h.addEventListener("click",e=>e.stopPropagation());
+  h.addEventListener("dblclick",e=>{ e.stopPropagation(); npSplitSet(0.5); savePrefs(); });
+  h.addEventListener("keydown",e=>{ const d=e.key==="ArrowLeft"?-0.02:e.key==="ArrowRight"?0.02:0; if(!d) return;
+    e.preventDefault(); e.stopPropagation(); npSplitSet(A.npSplit+d); savePrefs(); });
+})();
