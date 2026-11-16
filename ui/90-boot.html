@@ -816,8 +816,16 @@ function applyTheme(){
   b.style.transform=eff==="light"?"rotate(180deg)":"none";
   b.title="Theme: "+A.theme;
   b.classList.toggle("on",A.theme!=="auto");
-  readThemeColors();
+  readThemeColors(); syncThemeColor();
 }
+/* the title bar of DRAAI installed as a Chrome app follows <meta name="theme-color">:
+   the page colour, or near-black while a full-screen view is open (those stay dark) */
+function syncThemeColor(){ const m=document.querySelector('meta[name="theme-color"]'); if(!m) return;
+  const fs=FS_IDS.some(x=>{ const el=$("#"+x); return el && el.classList.contains("open"); });
+  const c=fs ? "#07070a" : (getComputedStyle(document.body).getPropertyValue("--page").trim()||"#08080b");
+  if(m.content!==c) m.content=c; }
+{ const mo=new MutationObserver(syncThemeColor);
+  FS_IDS.forEach(x=>{ const el=$("#"+x); if(el) mo.observe(el,{attributes:true,attributeFilter:["class"]}); }); }
 darkMq.addEventListener("change",()=>{ if(A.theme==="auto")applyTheme(); });
 $("#themeBtn").addEventListener("click",()=>{
   A.theme=A.theme==="auto"?"dark":A.theme==="dark"?"light":"auto";
