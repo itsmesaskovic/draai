@@ -142,10 +142,7 @@ async function toggleGroup(memberUuid){ const g=A.speakers.find(s=>s.uuid===grou
 function buildAlbums(){ const map=new Map();
   for(const t of A.tracks){ const key=(t.album||"Unknown")+"§"+(t.artist||""); if(!map.has(key)) map.set(key,{key,album:t.album||"Unknown",artist:t.artist||"Unknown artist",tracks:[],cover:null});
     const a=map.get(key); a.tracks.push(t); if(a.cover==null && t.has_art!==false) a.cover=t.id; }
-  A.albums=[...map.values()];
-  // a library of loose songs (no album tags) opens in Songs view by default
-  const realAlbums=A.albums.filter(a=>a.album!=="Unknown").length;
-  if(!A.viewChosen && A.view==="albums" && realAlbums===0 && A.tracks.length) A.view="tracks"; }
+  A.albums=[...map.values()]; }
 function filtered(){ const q=A.query.trim().toLowerCase(); if(!q) return A.tracks;
   return A.tracks.filter(t=>(t.title+" "+(t.artist||"")+" "+(t.album||"")).toLowerCase().includes(q)); }
 function renderContent(){ const c=$("#content");
@@ -153,28 +150,51 @@ function renderContent(){ const c=$("#content");
   if(A.view==="queue") return renderQueue(c);
   if(A.albumKey) return renderAlbumDetail(c);
   const list=filtered();
-  if(A.view==="albums"){ const q=A.query.trim().toLowerCase();
-    const albs=q? A.albums.filter(a=>(a.album+" "+a.artist).toLowerCase().includes(q)||a.tracks.some(t=>list.includes(t))) : A.albums;
-    c.innerHTML=`<div class="listhead"><div><h2>Albums</h2></div><span class="sub">${albs.length} album${albs.length!==1?"s":""} · ${A.trackCount||A.tracks.length} tracks</span></div>
-      ${albs.length?`<div class="wall">${albs.map(a=>`<div class="album" data-album="${esc(a.key)}">
-        <div class="cov">${a.cover!=null?`<img loading="lazy" src="${DEMO?Demo.art(a.cover):"/api/art?id="+enc(a.cover)}" onerror="this.style.display='none';this.parentNode.style.background=window.gradFor('${esc(a.key)}')" alt="">`:`<div style="width:100%;height:100%;background:${gradFor(a.key)}"></div>`}
-          <div class="ply"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
-        <div class="nm">${esc(a.album)}</div><div class="ar">${esc(a.artist)}</div></div>`).join("")}</div>`
-      : emptyBlock(q?"No albums match":"No music yet","Scan a folder to build your library.")}`;
-  } else {
-    const view=sortTracks(list); window.VIEWLIST=view;
-      const gkeys = A.group==="none" ? [] : [...new Set(view.map(t=> A.group+":"+(A.group==="folder"?(t.folder||"Library"):(t.artist||"Unknown artist"))))];
-      const allColl = gkeys.length>0 && gkeys.every(k=>A.collapsed.has(k));
-      const ctl=`<div class="qtools">
-        <select class="mini" id="grpSel"><option value="none"${A.group==="none"?" selected":""}>No grouping</option><option value="folder"${A.group==="folder"?" selected":""}>By folder</option><option value="artist"${A.group==="artist"?" selected":""}>By artist</option></select>
-        <select class="mini" id="sortSel"><option value="title"${A.sort==="title"?" selected":""}>Title</option><option value="artist"${A.sort==="artist"?" selected":""}>Artist</option><option value="added"${A.sort==="added"?" selected":""}>Date added</option></select>
-        <button class="btn" id="dirBtn" title="Sort direction">${A.dir>0?"↑":"↓"}</button>
-        ${A.group!=="none"?`<button class="btn" id="collapseAllBtn">${allColl?"Expand all":"Collapse all"}</button>`:""}
-        <button class="btn${A.selMode?" acc":""}" id="selBtn">Select</button>
-      </div>`;
-      c.innerHTML=`<div class="listwrap"><div class="listhead"><div><h2>${A.query?"Results":"Songs"}</h2><span class="sub">${view.length} track${view.length!==1?"s":""}${view.length>500?" · showing 500":""}</span></div>${ctl}</div>
-      ${view.length?renderSongRows(view):emptyBlock(A.query?"No songs match":"No music yet","Scan a folder to build your library.")}</div>`;
-  }
+  if(A.view==="home" && !A.query.trim()) return renderHome(c);
+  const view=sortTracks(list); window.VIEWLIST=view;
+  const gkeys = A.group==="none" ? [] : [...new Set(view.map(t=> A.group+":"+(A.group==="folder"?(t.folder||"Library"):(t.artist||"Unknown artist"))))];
+  const allColl = gkeys.length>0 && gkeys.every(k=>A.collapsed.has(k));
+  const ctl=`<div class="qtools">
+    <select class="mini" id="grpSel"><option value="none"${A.group==="none"?" selected":""}>No grouping</option><option value="folder"${A.group==="folder"?" selected":""}>By folder</option><option value="artist"${A.group==="artist"?" selected":""}>By artist</option></select>
+    <select class="mini" id="sortSel"><option value="title"${A.sort==="title"?" selected":""}>Title</option><option value="artist"${A.sort==="artist"?" selected":""}>Artist</option><option value="added"${A.sort==="added"?" selected":""}>Date added</option></select>
+    <button class="btn" id="dirBtn" title="Sort direction">${A.dir>0?"↑":"↓"}</button>
+    ${A.group!=="none"?`<button class="btn" id="collapseAllBtn">${allColl?"Expand all":"Collapse all"}</button>`:""}
+    <button class="btn${A.selMode?" acc":""}" id="selBtn">Select</button>
+  </div>`;
+  c.innerHTML=`<div class="listwrap"><div class="listhead"><div><h2>${A.query?"Results":"Songs"}</h2><span class="sub">${view.length} track${view.length!==1?"s":""}${view.length>500?" · showing 500":""}</span></div>${ctl}</div>
+  ${view.length?renderSongRows(view):emptyBlock(A.query?"No songs match":"No music yet","Scan a folder to build your library.")}</div>`;
+}
+/* ---- home: continue listening / most played / recently added ---- */
+function fmtListened(sec){ sec=Math.round(+sec||0); const h=(sec/3600)|0, m=(sec%3600/60)|0;
+  return sec>=3600 ? h+"h "+m+"m" : sec>=60 ? m+"m" : ""; }
+async function loadMostPlayed(){ if(DEMO){ A.mostPlayed=[]; return; }
+  try{ const d=await api("/api/most_played?limit=10"); A.mostPlayed=d.tracks||[]; }catch(e){ A.mostPlayed=[]; }
+  if(A.view==="home" && !A.query.trim() && !A.albumKey) renderContent(); }
+function homeRow(t,lead,sub,extra){ const playing=String(t.id)===String(A.curId);
+  const art=(t.has_art===false)?"":`<img loading="lazy" src="${DEMO?Demo.art(t.id):"/api/art?id="+enc(t.id)}" onerror="this.remove()" alt="">`;
+  return `<div class="row hrow${lead?" hrank":""}${playing?" playing":""}" data-play="${t.id}">${lead?`<span class="hnum">${lead}</span>`:""}
+    <div class="rthumb" style="background:${gradFor((t.album||"")+"§"+(t.artist||t.title))}">${art}</div>
+    <div class="tt"><b>${esc(t.title)}</b>${t.artist?`<small>${esc(t.artist)}</small>`:""}${extra||""}</div>
+    <div class="rright"><span class="hmeta">${sub}</span>
+      <div class="acts"><button class="iconbtn" data-enqueue="${t.id}" title="Add to queue · ⌥ Play next"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h13M3 12h9M3 18h9M17 12v6M14 15h6"/></svg></button></div>
+    </div></div>`; }
+function renderHome(c){
+  if(!A.tracks.length){ c.innerHTML=emptyBlock("No music yet","Scan a folder to build your library."); return; }
+  const cont=A.tracks.filter(t=>(t.resume||0)>0)
+    .sort((a,b)=>(b.seen||0)-(a.seen||0)||String(a.title).localeCompare(String(b.title))).slice(0,6);
+  const most=(A.mostPlayed||[]).filter(t=>fmtListened(t.listened)).slice(0,10);
+  const recent=[...A.tracks].sort((a,b)=>(b.added||0)-(a.added||0)).slice(0,8);
+  const shelf=(title,body)=>`<section class="hshelf"><h3>${title}</h3>${body}</section>`;
+  let out="";
+  if(cont.length) out+=shelf("Continue listening",`<div class="rows">${cont.map(t=>{
+    const bar=(t.dur||0)>0?`<span class="hprog"><i style="width:${clamp(t.resume/t.dur*100,0,100).toFixed(1)}%"></i></span>`:"";
+    return homeRow(t,0,"resumes at "+fmt(t.resume),bar); }).join("")}</div>`);
+  if(most.length) out+=shelf("Most played",`<div class="rows">${most.map((t,i)=>homeRow(t,i+1,fmtListened(t.listened))).join("")}</div>`);
+  if(recent.length) out+=shelf("Recently added",`<div class="htiles">${recent.map(t=>{
+    const img=(t.has_art===false)?"":`<img loading="lazy" src="${DEMO?Demo.art(t.id):"/api/art?id="+enc(t.id)}" onerror="this.remove()" alt="">`;
+    return `<div class="htile" data-play="${t.id}" title="${esc(t.title)}"><div class="cov" style="background:${gradFor((t.album||"")+"§"+(t.artist||t.title))}">${img}<div class="ply"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
+      <div class="nm">${esc(t.title)}</div><div class="ar">${esc(t.artist||"")}</div></div>`; }).join("")}</div>`);
+  c.innerHTML=`<div class="listwrap"><div class="listhead"><div><h2>Home</h2></div><span class="sub">${(A.trackCount||A.tracks.length).toLocaleString()} tracks</span></div>${out}</div>`;
 }
 window.gradFor=function(key){ const h=hash(key)%360; return `radial-gradient(120% 120% at 25% 18%,hsl(${h} 70% 55%),transparent 58%),radial-gradient(120% 120% at 82% 88%,hsl(${(h+50)%360} 62% 42%),transparent 60%),linear-gradient(150deg,hsl(${h} 40% 16%),#0a0a10 82%)`; };
 const gradFor=window.gradFor;
@@ -295,8 +315,8 @@ setInterval(()=>{ if($("#np").classList.contains("open")){ const d=new Date(); $
 
 /* ---------------- events ---------------- */
 function wire(){
-  $$(".seg").forEach(s=>s.addEventListener("click",()=>{ A.view=s.dataset.view; A.viewChosen=true; A.albumKey=null; renderContent(); }));
-  $("#searchInput").addEventListener("input",e=>{ A.query=e.target.value; A.albumKey=null; if(A.view==="queue")A.view="albums"; renderContent(); });
+  $$(".seg").forEach(s=>s.addEventListener("click",()=>{ A.view=s.dataset.view; A.viewChosen=true; A.albumKey=null; renderContent(); if(A.view==="home") loadMostPlayed(); }));
+  $("#searchInput").addEventListener("input",e=>{ A.query=e.target.value; A.albumKey=null; if(A.view==="queue"||A.view==="home")A.view="tracks"; renderContent(); });
   // delegated clicks
   document.addEventListener("click",e=>{
     const t=(a)=>e.target.closest(a);
@@ -425,7 +445,7 @@ async function refreshState(){ const s=await api("/api/state"); A.speakers=s.spe
   if(!A.speaker && A.speakers.length){ A.speaker=A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers[0]; applyBackendUI(); }
   renderRooms(); }
 async function refreshTracks(){ await guard(async()=>{ const d=await api("/api/tracks?q="); A.tracks=d.tracks||[]; A.trackCount=d.total??A.tracks.length;
-  $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; buildAlbums(); renderContent(); }); }
+  $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; buildAlbums(); renderContent(); }); loadMostPlayed(); }
 
 /* ============================================================
    DEMO BACKEND — active only when no real /api responds.

@@ -121,6 +121,21 @@
 .eqmark i:nth-child(2){height:100%;transform:scaleY(calc(.25 + var(--e-mid)*.75))}
 .eqmark i:nth-child(3){height:100%;transform:scaleY(calc(.25 + var(--e-high)*.75))}
 
+/* home shelves */
+.hshelf{margin:0 0 30px}
+.hshelf h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;padding:0 4px 10px}
+.hrow.hrank{grid-template-columns:22px 46px minmax(0,1fr) auto}
+.hnum{font-size:13px;color:var(--dim2);text-align:right;font-variant-numeric:tabular-nums}
+.hmeta{font-size:12.5px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.hprog{display:block;height:3px;border-radius:2px;background:var(--line2);margin-top:6px;max-width:320px;overflow:hidden}
+.hprog i{display:block;height:100%;background:rgb(var(--ac));border-radius:2px}
+.htiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:20px 16px}
+.htile{cursor:pointer;display:flex;flex-direction:column;gap:10px;min-width:0}
+.htile:hover .cov{transform:translateY(-4px);box-shadow:0 20px 50px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.08)}
+.htile:hover .cov .ply{opacity:1;transform:none}
+.htile .nm{font-size:13.5px;font-weight:560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.htile .ar{font-size:12.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:-6px}
+
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--dim2);text-align:center}
 .empty .ic{width:40px;height:40px}
 .qtools{display:flex;gap:8px;align-items:center}

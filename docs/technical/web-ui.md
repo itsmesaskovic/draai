@@ -4,7 +4,7 @@
 
 ## Purpose
 
-`player_ui.html` is the full-featured player interface: library browsing (albums/songs/queue/playlists), room control and grouping, EQ, sleep timer, yt-dlp import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
+`player_ui.html` is the full-featured player interface: library browsing (home shelves/songs/queue/playlists), room control and grouping, EQ, sleep timer, yt-dlp import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
 
 **Never hand-edit a top-level `player_ui.html`.** It is a git-ignored build artifact produced by `build.py` for the `.pyz`, and `_load_ui()` gives a file in the cwd precedence over the partials — so a stale one silently masks every change you make in `ui/`. If a UI edit appears to do nothing, check for one before debugging anything else.
 
@@ -87,6 +87,15 @@ Flow: `getArt()` (`player_ui.html:679-687`) loads the track art image, then:
 
 - A silent, looping, near-zero-volume `<audio>` element (`SILENT_WAV`, a data-URI, `player_ui.html:1442`) is created by `armMediaKeys()` (`player_ui.html:1444-1456`) and kept playing so macOS/the browser treats the page as an active media session, which unlocks `navigator.mediaSession` action handlers (play/pause/prev/next/seekto → `cmd(...)`, `player_ui.html:1450-1454`).
 - `armMediaKeys` is wired to fire once on the first `pointerdown` anywhere in the document (`player_ui.html:1457`, `{once:true}`) — browsers require a user gesture before they'll let a page autoplay audio, so it can't run at page load.
+
+### Home tab
+
+- The first segmented tab is **Home** (`data-view="home"`, the default `A.view`). `renderContent()` hands off to `renderHome(c)` (`ui/90-boot.html`) whenever the view is `home` and the search box is empty; typing a query switches the view to Songs (`tracks`) results, as the old Albums tab did. The album wall is no longer rendered from any tab (album-detail code still exists for now). The old "library of loose songs opens in Songs" auto-switch in `buildAlbums()` is gone — Home is always the landing view.
+- Three shelves, in order, each omitted when empty (`.hshelf` with an `h3`):
+  - **Continue listening** — tracks from `/api/tracks` with `resume > 0`, sorted by `seen` desc (ties: title), max 6. Rows (`homeRow`, built on the `.row` shell) show art, title/artist, `resumes at M:SS` (or `H:MM:SS`, via `fmt`) and, when `dur > 0`, a `.hprog` progress bar at `resume/dur`.
+  - **Most played** — `A.mostPlayed`, filled by `loadMostPlayed()` from `GET /api/most_played?limit=10`; ranked rows (`.hrow.hrank`, `.hnum`) with `fmtListened(listened)`: `>= 3600` → `"6h 40m"`, `>= 60` → `"45m"`, else `""` (row skipped). Refetched on every `refreshTracks()` and when the Home tab is clicked; a failure just empties the list (shelf hidden, no toast). In `DEMO` mode it is always empty.
+  - **Recently added** — `added` desc, max 8, cover tiles (`.htiles` grid of `.htile`, reusing `.cov` with a `gradFor` background behind the art).
+- Clicking any row or tile is `data-play` → `playTracks([id])`; the engine seeks to the saved resume position itself. Row enqueue buttons keep `data-enqueue`. Empty library → `emptyBlock("No music yet", …)`.
 
 ### Songs & queue rows
 
