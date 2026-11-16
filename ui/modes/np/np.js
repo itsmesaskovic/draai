@@ -4,7 +4,7 @@
    runtime (the engine asks the user's own yt-dlp); nothing is fetched while #np is
    closed, in vinyl mode, or in the demo. Any failure quietly leaves the cover. */
 const NPV={ id:null, gen:0, streams:[], cur:-1, errors:0, failed:null, shown:false,
-  playT:0, winT:0, q:null, lastT:0 };
+  playT:0, winT:0, q:null, lastT:0, waiting:false, waits:0, bufT:0 };
 function npVideoEl(){ return $("#npVideo"); }
 function npVideoWanted(){
   if(DEMO || VINYL || A.curId==null || !$("#np").classList.contains("open")) return null;
@@ -29,7 +29,7 @@ function npVideoUnload(){ const v=npVideoEl();
   if(v.hasAttribute("src")){ v.removeAttribute("src"); try{ v.load(); }catch(e){} }
   if(NPV.shown) npVideoShow(false); }
 function npVideoSetSrc(i, keepShown){ const v=npVideoEl(), s=NPV.streams[i]; NPV.cur=i;
-  NPV.playT=0; NPV.winT=0; NPV.q=null;
+  NPV.playT=0; NPV.winT=0; NPV.q=null; NPV.waiting=false; NPV.waits=0; NPV.bufT=0;
   if(!keepShown && NPV.shown) npVideoShow(false);
   v.playbackRate=1; v.src=s.url; try{ v.load(); }catch(e){} }
 /* resolves to the playable streams (tallest first, maybe empty), null when the engine
@@ -68,22 +68,33 @@ function npVideoSync(){
   if(DEMO || VINYL || !$("#np").classList.contains("open")){ npVideoUpdate(); return; }  // safety net for any close path
   const v=npVideoEl(), now=performance.now(), dt=Math.min(.25,(now-(NPV.lastT||now))/1000); NPV.lastT=now;
   if(NPV.cur<0 || v.readyState<1 || v.seeking) return;
-  const dur=isFinite(v.duration)?v.duration:Infinity;
-  const want=Math.min(posSec,Math.max(0,dur-0.05));
-  const d=v.currentTime-want;
+  const dur=isFinite(v.duration)?v.duration:Infinity, end=Math.max(0,dur-0.05);
+  // the audio ran past the video's end: hold the last frame. Never play() an ended
+  // video — that rewinds it to 0, and the drift seek would loop it forever.
+  if(posSec>=end){ if(!v.paused) v.pause(); v.playbackRate=1;
+    if(v.currentTime<end-1) v.currentTime=end;                   // e.g. the audio jumped past the end
+    return; }
+  const want=posSec, d=v.currentTime-want;
+  if(v.ended){ v.currentTime=want; return; }                     // audio sought back below the end: seek, play next tick
   if(!playing){ if(!v.paused) v.pause(); v.playbackRate=1; if(Math.abs(d)>2) v.currentTime=want; return; }
   if(v.paused){ const p=v.play(); if(p&&p.catch) p.catch(()=>{}); }
-  if(Math.abs(d)>2){ v.currentTime=want; v.playbackRate=1; }
+  // While buffering, currentTime stands still: a drift seek would throw the buffer away
+  // and start over. Wait; once it plays again one seek (if needed) catches up.
+  const buffering=NPV.waiting || v.readyState<3;
+  if(buffering) v.playbackRate=1;
+  else if(Math.abs(d)>2){ v.currentTime=want; v.playbackRate=1; }
   else if(Math.abs(d)>0.15) v.playbackRate=d>0?0.95:1.05;
   else v.playbackRate=1;
-  // step-down: after 15 s of playback, judge every 10 s window on dropped frames
-  if(v.paused || !NPV.shown || !v.getVideoPlaybackQuality) return;
+  // step-down: after 15 s of playback, judge every 10 s window on dropped frames and stalls
+  if(v.paused || !NPV.shown) return;
   NPV.playT+=dt; if(NPV.playT<15) return;
-  const q=v.getVideoPlaybackQuality();
-  if(!NPV.q){ NPV.q={drop:q.droppedVideoFrames,tot:q.totalVideoFrames}; NPV.winT=NPV.playT; return; }
+  const q=v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : {droppedVideoFrames:0,totalVideoFrames:0};
+  if(!NPV.q){ NPV.q={drop:q.droppedVideoFrames,tot:q.totalVideoFrames}; NPV.winT=NPV.playT; NPV.waits=0; NPV.bufT=0; return; }
+  if(buffering) NPV.bufT+=dt;
+  if(NPV.waits>=2 || NPV.bufT>3){ if(!npVideoStepDown()){ NPV.waits=0; NPV.bufT=0; } return; }  // lowest already: just keep going
   if(NPV.playT-NPV.winT<10) return;
   const drop=q.droppedVideoFrames-NPV.q.drop, tot=q.totalVideoFrames-NPV.q.tot;
-  NPV.q={drop:q.droppedVideoFrames,tot:q.totalVideoFrames}; NPV.winT=NPV.playT;
+  NPV.q={drop:q.droppedVideoFrames,tot:q.totalVideoFrames}; NPV.winT=NPV.playT; NPV.waits=0; NPV.bufT=0;
   if(tot>0 && drop/tot>0.10) npVideoStepDown();
 }
 function npVideoFullscreen(){ const v=npVideoEl();
@@ -94,6 +105,10 @@ function npVideoFullscreen(){ const v=npVideoEl();
   v.addEventListener("loadedmetadata",()=>{ if(NPV.cur<0) return;
     const dur=isFinite(v.duration)?v.duration:Infinity; try{ v.currentTime=Math.min(posSec,Math.max(0,dur-0.05)); }catch(e){} });
   v.addEventListener("loadeddata",()=>{ if(NPV.id!=null && NPV.cur>=0 && !NPV.shown) npVideoShow(true); });
+  // a stall (not a seek we asked for) counts toward step-down; playing/canplay ends it
+  v.addEventListener("waiting",()=>{ NPV.waiting=true; if(!v.seeking) NPV.waits++; });
+  v.addEventListener("playing",()=>{ NPV.waiting=false; });
+  v.addEventListener("canplay",()=>{ NPV.waiting=false; });
   v.addEventListener("error",()=>{ if(v.hasAttribute("src")) npVideoError(); });
   v.addEventListener("click",npVideoFullscreen);
   $("#npVidFs").addEventListener("click",e=>{ e.stopPropagation(); npVideoFullscreen(); });
