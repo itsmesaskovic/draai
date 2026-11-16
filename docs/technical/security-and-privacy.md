@@ -91,7 +91,9 @@ for the better beat detector.
 | `beat_this` | First analysis of a track, to fetch its model **once** | Not per-request and not visible in the UI, so it is called out here explicitly. Avoid it entirely by placing the checkpoint at `<config>/beat_this.ckpt` — DRAAI then passes `--model <path>` and the download path never runs. |
 
 The `beat_this` case is the one worth stating plainly, because it is the only
-egress in DRAAI that is not directly triggered by a user action. It is a model
+egress in DRAAI that is not tied to something the user does or has open (set
+video is tied to the open full-screen view, including when the next set starts
+on its own while it is open). It is a model
 download from the authors' server, unauthenticated and without a checksum. On
 torch < 2.6 that file is unpickled, which is arbitrary code execution if the
 server or the transport is ever compromised; on torch >= 2.6 `weights_only`

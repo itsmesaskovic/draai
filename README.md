@@ -20,8 +20,9 @@ devices, side by side — including a Chromecast Audio, which takes hi-res FLAC
 can't play *in sync with each other*, but each plays perfectly on its own.)
 
 No Sonos account. No internet needed. Nothing leaves your home network —
-with one opt-in exception: if you have yt-dlp installed, a set imported with
-it can show its video while you watch (see [Privacy & security](#privacy--security)).
+except through *your own* yt-dlp, if you install it: importing a set from a URL
+you paste, and showing an imported set's video while the full-screen view is
+open (see [Privacy & security](#privacy--security)).
 
 ## What it looks like
 
@@ -281,8 +282,8 @@ Like the import, this reaches the internet; see
 
 **Use this only for content you have the right to download**: your own
 uploads, Creative Commons-licensed material, public-domain recordings, and
-content whose owner permits it. Downloading may otherwise violate a
-website's terms of service and/or copyright law in your country. The
+content whose owner permits it. Downloading — or streaming a set's video
+through yt-dlp — may otherwise violate a website's terms of service and/or copyright law in your country. The
 authors of this project do not endorse or encourage downloading copyrighted
 content, and how you use your own yt-dlp installation is your responsibility
 alone.
@@ -365,7 +366,7 @@ policy asserts:
   speakers, on your own network. The exceptions both need *your* yt-dlp: the
   import, which runs on a URL *you* paste, and the set video.
 - **Set video, honestly** — when you open the full-screen view of a set imported
-  with yt-dlp, your yt-dlp asks the source site (e.g. YouTube) for the video,
+  with yt-dlp (or the next such set starts while it's open), your yt-dlp asks the source site (e.g. YouTube) for the video,
   and your browser streams it from there while you watch. That site sees your
   IP address and that you're watching that video, just as if you watched it
   there. Nothing else goes along: no account, no cookies, no library data.
