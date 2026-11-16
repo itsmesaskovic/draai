@@ -89,7 +89,7 @@ on file extension — it does not sniff content for non-dispatched formats:
 
 | ext | parser | format details |
 |---|---|---|
-| `.mp3` | `_tags_mp3` (`draai/library.py:45`) | ID3v2 header (`ID3` + syncsafe size, `draai/library.py:10-11`), skips an extended header if the flag bit is set, then walks frames. ID3v2.2 uses 3-char ids/`TT2`/`TP1`/`TAL`/`PIC`; v2.3+/v2.4 use 4-char ids/`TIT2`/`TPE1`/`TALB`/`APIC`, with v2.4 frame sizes also syncsafe (`draai/library.py:62-79`). Text frames go through `_id3_text` (`draai/library.py:14`), which honors the ID3 encoding byte (0=latin-1, 1=UTF-16 w/ BOM, 2=UTF-16BE, 3=UTF-8). Art frames (`PIC`/`APIC`) are located by skipping the encoding byte + MIME/format + picture-type + description (`_null_split`, `draai/library.py:32`, single-null for latin/UTF-8, double-null for UTF-16), then sniffed as JPEG (`\xff\xd8\xff`) or PNG (`\x89PNG`) magic bytes. |
+| `.mp3` | `_tags_mp3` (`draai/library.py:45`) | ID3v2 header (`ID3` + syncsafe size, `draai/library.py:10-11`), skips an extended header if the flag bit is set, then walks frames. ID3v2.2 uses 3-char ids/`TT2`/`TP1`/`TAL`/`PIC`; v2.3+/v2.4 use 4-char ids/`TIT2`/`TPE1`/`TALB`/`APIC`, with v2.4 frame sizes also syncsafe (`draai/library.py:62-79`). Text frames go through `_id3_text` (`draai/library.py:14`), which honors the ID3 encoding byte (0=latin-1, 1=UTF-16 w/ BOM, 2=UTF-16BE, 3=UTF-8). Art frames (`PIC`/`APIC`) are located by skipping the encoding byte + MIME/format + picture-type + description (`_null_split`, `draai/library.py:32`, single-null for latin/UTF-8, double-null for UTF-16), then sniffed as JPEG (`\xff\xd8\xff`) or PNG (`\x89PNG`) magic bytes. `TXXX` (v2.2 `TXX`) user-text frames are split into description/value by `_id3_txxx` (same encoding handling); the one whose description is `purl` (case-insensitive, the source link yt-dlp `--embed-metadata` writes) becomes `source_url`, but only when `_source_url` accepts it (starts with `http://` or `https://`; anything else, e.g. `javascript:` or a `-`-prefixed value, is dropped). The whole tag (up to 32 MiB) is read, so the frame is found even after a large `APIC` cover. |
 | `.m4a` / `.aac` / `.mp4` | `_tags_mp4` (`draai/library.py:124`) | Streams the file's top-level box headers looking for `moov` (reads it into memory, capped at 64 MiB, `draai/library.py:145`) *without* reading the whole file first — important because `moov` can be near the end of a large file. Then descends `udta > meta > ilst > <tag> > data` via the generic box walker `_mp4_children` (`draai/library.py:107`), mapping `©nam`/`©ART`/`©alb` to title/artist/album and `covr` to art (again sniffed by magic bytes; only JPEG/PNG are recognized). |
 | `.flac` | `_tags_flac` (`draai/library.py:182`) | Verifies the `fLaC` magic, then walks METADATA_BLOCKs by header byte (top bit = last-block flag, low 7 bits = block type, `draai/library.py:191-193`). Type 4 is VORBIS_COMMENT: skips the vendor string, then reads `KEY=value` pairs (case-insensitively upper-cased) for `TITLE`/`ARTIST`/`ALBUM`, capped at 256 comments. Type 6 is PICTURE: parses MIME length, description length + skip, then width/height/depth/colors (16 bytes) before the image data length + bytes (`draai/library.py:216-231`). |
 | `.wav`, `.aiff`/`.aif`, `.ogg` | **none** | These extensions are in `AUDIO_EXTS` (`draai/constants.py:5-14`) so they are scanned, played, and streamed, but `read_tags` has no branch for them (`draai/library.py:241-252`) — it silently returns `{}`. Title falls back to the filename stem; artist/album are empty; there is no embedded-art extraction for these formats. |
@@ -239,10 +239,13 @@ Two different, overlapping shapes exist — know which one you're looking at:
 
 - **Internal record** (`state.tracks` / `state.tracks_by_id`), built by
   `_scan_root` (`draai/library.py:326-336`):
-  `{id, path, added, title, artist, album, has_art, folder, ext}`. `path`
-  is an absolute filesystem path and is never sent to the client directly.
+  `{id, path, added, title, artist, album, has_art, source_url, folder, ext}`.
+  `path` is an absolute filesystem path and is never sent to the client
+  directly. `source_url` is the http(s) source link from an MP3's
+  `TXXX:purl` frame, `""` if none; it stays server-side too.
 - **`GET /api/tracks` wire shape** (`draai/server.py:350-356`):
-  `{id, title, artist, album, has_art, added, dir, folder}` — `path` is
+  `{id, title, artist, album, has_art, has_video, added, dir, folder}` —
+  `has_video` is `bool(source_url)` (the link itself is never sent); `path` is
   replaced with `dir` (`os.path.dirname(path)`, used only for the
   folder-group tooltip), and `ext`/the raw `path` are omitted (the client
   never needs the extension directly; `/media/<id>/<name>` resolves it

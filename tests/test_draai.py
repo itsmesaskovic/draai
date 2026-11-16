@@ -49,8 +49,9 @@ sp.ThreadingHTTPServer = http.server.ThreadingHTTPServer   # for the live-server
 # ----------------------------------------------------------------------------
 
 def make_mp3(path, title="Song", artist="Artist", album="Album",
-             art=b"\x89PNG\r\n\x1a\nFAKEPNGDATA"):
-    """Minimal ID3v2.3 tag + dummy audio bytes."""
+             art=b"\x89PNG\r\n\x1a\nFAKEPNGDATA", purl=None):
+    """Minimal ID3v2.3 tag + dummy audio bytes. `purl` adds a yt-dlp style
+    TXXX:purl source-link frame (latin-1, after the cover, like yt-dlp)."""
     def frame(fid, body):
         return fid + struct.pack(">I", len(body)) + b"\x00\x00" + body
 
@@ -60,6 +61,8 @@ def make_mp3(path, title="Song", artist="Artist", album="Album",
     frames = text(b"TIT2", title) + text(b"TPE1", artist) + text(b"TALB", album)
     if art:
         frames += frame(b"APIC", b"\x03image/png\x00\x03\x00" + art)
+    if purl is not None:
+        frames += frame(b"TXXX", b"\x00purl\x00" + purl.encode("latin-1"))
     size = len(frames)
     ss = bytes([(size >> 21) & 0x7F, (size >> 14) & 0x7F,
                 (size >> 7) & 0x7F, size & 0x7F])
@@ -1031,6 +1034,49 @@ class DraaiTests(unittest.TestCase):
             self.assertEqual((p["resume"], p["dur"], p["seen"]), (1930, 5400, 1700000000.0))
             self.assertEqual((q["resume"], q["dur"], q["seen"]), (0, 0, 0))
             self.assertEqual(p["artist"], "P-DJ")      # existing fields unchanged
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_read_tags_source_url(self):
+        url = "https://www.youtube.com/watch?v=abc"
+        p = os.path.join(self.tmp, "v.mp3")
+        big = b"\x89PNG\r\n\x1a\n" + b"\x01" * (3 * 1024 * 1024)  # large cover first
+        make_mp3(p, "V-Set", purl=url, art=big)
+        self.assertEqual(sp.read_tags(p).get("source_url"), url)
+        p2 = os.path.join(self.tmp, "n.mp3")
+        make_mp3(p2, "N-Set")
+        self.assertEqual(sp.read_tags(p2).get("source_url", ""), "")
+        sp.scan_all()
+        by = {t["title"]: t for t in sp.tracks}
+        self.assertEqual(by["V-Set"]["source_url"], url)
+        self.assertEqual(by["N-Set"]["source_url"], "")
+
+    def test_source_url_rejects_non_http(self):
+        for bad in ("javascript:x", "-oops"):
+            p = os.path.join(self.tmp, "bad.mp3")
+            make_mp3(p, "B-Set", purl=bad)
+            self.assertEqual(sp.read_tags(p).get("source_url", ""), "")
+            sp.scan_all()
+            self.assertEqual({t["title"]: t for t in sp.tracks}["B-Set"]["source_url"], "")
+
+    def test_api_tracks_has_video(self):
+        url = "https://www.youtube.com/watch?v=abc"
+        make_mp3(os.path.join(self.tmp, "v.mp3"), "V-Set", purl=url)
+        make_mp3(os.path.join(self.tmp, "n.mp3"), "N-Set")
+        sp.scan_all()
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            with urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/tracks" % port, timeout=5) as r:
+                raw = r.read().decode("utf-8")
+            got = {t["title"]: t for t in json.loads(raw)["tracks"]}
+            self.assertIs(got["V-Set"]["has_video"], True)
+            self.assertIs(got["N-Set"]["has_video"], False)
+            self.assertNotIn("youtube.com", raw)
+            self.assertNotIn("source_url", raw)
         finally:
             httpd.shutdown()
             httpd.server_close()

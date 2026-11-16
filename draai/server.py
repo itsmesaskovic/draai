@@ -423,6 +423,7 @@ class Handler(BaseHTTPRequestHandler):
                         "artist": t.get("artist", ""),
                         "album": t.get("album", ""),
                         "has_art": t.get("has_art", False),
+                        "has_video": bool(t.get("source_url")),
                         "added": t.get("added", 0),
                         "dir": os.path.dirname(t["path"]),
                         "folder": t["folder"],

@@ -42,6 +42,25 @@ def _null_split(data, wide):
     return data[i + 1:] if i >= 0 else b""
 
 
+def _source_url(value):
+    """Keep a source link only when it is a plain http(s) URL."""
+    value = (value or "").strip()
+    low = value.lower()
+    if low.startswith("http://") or low.startswith("https://"):
+        return value
+    return ""
+
+
+def _id3_txxx(body):
+    """TXXX/TXX body -> (description, value), decoded with its encoding."""
+    if not body:
+        return "", ""
+    enc = body[:1]
+    rest = _null_split(body[1:], body[0] in (1, 2))
+    desc_raw = body[1:len(body) - len(rest)]
+    return _id3_text(enc + desc_raw), _id3_text(enc + rest)
+
+
 def _tags_mp3(path, want_art):
     with open(path, "rb") as f:
         head = f.read(10)
@@ -63,10 +82,12 @@ def _tags_mp3(path, want_art):
         idlen, hdrlen = 3, 6
         names = {b"TT2": "title", b"TP1": "artist", b"TAL": "album"}
         art_id = b"PIC"
+        txxx_id = b"TXX"
     else:
         idlen, hdrlen = 4, 10
         names = {b"TIT2": "title", b"TPE1": "artist", b"TALB": "album"}
         art_id = b"APIC"
+        txxx_id = b"TXXX"
     while pos + hdrlen <= len(data):
         fid = data[pos:pos + idlen]
         if fid.strip(b"\x00") == b"" or not fid.isalnum() and b"\xa9" not in fid:
@@ -84,6 +105,12 @@ def _tags_mp3(path, want_art):
         key = names.get(fid)
         if key and key not in out:
             out[key] = _id3_text(body)
+        elif fid == txxx_id and "source_url" not in out:
+            desc, value = _id3_txxx(body)
+            if desc.lower() == "purl":   # yt-dlp --embed-metadata source link
+                url = _source_url(value)
+                if url:
+                    out["source_url"] = url
         elif fid == art_id and "art" not in out:
             out["has_art"] = True
             if want_art:
@@ -331,6 +358,7 @@ def _scan_root(folder, multi):
                 "artist": tags.get("artist", ""),
                 "album": tags.get("album", ""),
                 "has_art": bool(tags.get("has_art")),
+                "source_url": _source_url(tags.get("source_url")),
                 "folder": rel,
                 "ext": ext,
             })
