@@ -64,7 +64,7 @@ asserts the assembled UI contains no `https://`, no `@import`/`<link>`/external
 `src`, and only relative `fetch()` targets.
 
 **Local storage only.** Preferences (`config.json`), resume positions
-(`positions.json`), and the analysis cache live on your disk under
+(`positions.json`), time listened per track (`listening.json`), and the analysis cache live on your disk under
 `~/Library/Application Support/SonosMP3Player/`. Nothing syncs anywhere. The UI
 deliberately uses no `localStorage`/`sessionStorage` either — preferences round-trip
 through the engine so there's a single, local source of truth.

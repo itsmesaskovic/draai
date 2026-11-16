@@ -27,7 +27,7 @@ import types
 import draai
 import draai.state, draai.constants, draai.util, draai.config, draai.media
 import draai.library, draai.analysis, draai.importer, draai.cast
-import draai.backends, draai.playlists, draai.server
+import draai.backends, draai.playlists, draai.server, draai.listening
 
 # `sp` = a flat namespace of the package's public API for the tests' sp.<name>
 # reads/calls. Function MOCKS are patched on the real module they live in
@@ -35,7 +35,7 @@ import draai.backends, draai.playlists, draai.server
 sp = types.SimpleNamespace(__version__=draai.__version__)
 for _m in (draai.state, draai.constants, draai.util, draai.config, draai.media,
            draai.library, draai.analysis, draai.importer, draai.cast,
-           draai.backends, draai.playlists, draai.server):
+           draai.backends, draai.playlists, draai.server, draai.listening):
     for _n in dir(_m):
         if not _n.startswith("__"):
             setattr(sp, _n, getattr(_m, _n))
@@ -911,6 +911,116 @@ class DraaiTests(unittest.TestCase):
             self.assertIn(marker, html)
 
     # -- privacy / security invariants (see docs/technical/security-and-privacy.md) --
+
+    # -- time listened -------------------------------------------------------------
+
+    def _listen_reset(self):
+        L = draai.listening
+        L._path[0] = os.path.join(self.tmp, "listening.json")
+        with sp.listening_lock:
+            sp.listening.clear()
+        with L._last_lock:
+            L._last.clear()
+        return L
+
+    def test_listening_delta_crediting(self):
+        L = self._listen_reset()
+        A, B = {"uuid": "A", "ip": "1.1.1.1"}, {"uuid": "B", "ip": "1.1.1.2"}
+        t1, t2, t3 = "1" * 16, "2" * 16, "3" * 16
+
+        def st(tid, pos, state="PLAYING"):
+            return {"state": state, "track_id": tid, "position": sp.sec_to_hms(pos)}
+        self.assertEqual(L.observe(A, st(t1, 100), now=0), 0)      # first sight
+        self.assertEqual(L.observe(B, st(t1, 10), now=1), 0)       # other speaker
+        self.assertEqual(L.observe(A, st(t1, 115), now=15), 15)    # normal tick
+        self.assertEqual(L.observe(B, st(t1, 24), now=16), 14)     # tracked separately
+        self.assertEqual(L.observe(A, st(t1, 400), now=30), 0)     # seek forward
+        self.assertEqual(L.observe(A, st(t1, 415), now=45), 15)
+        self.assertEqual(L.observe(A, st(t1, 300), now=60), 0)     # seek back
+        self.assertEqual(L.observe(A, st(t1, 300, "PAUSED_PLAYBACK"), now=75), 0)
+        self.assertEqual(L.observe(A, st(t1, 300, "PAUSED_PLAYBACK"), now=90), 0)
+        self.assertEqual(L.observe(A, st(t1, 305), now=105), 5)    # resumed
+        self.assertEqual(L.observe(A, st(t1, 290), now=100), 0)    # older sample lost a race
+        self.assertEqual(L.observe(A, st(t2, 8), now=120), 8)      # new track began in window
+        self.assertEqual(L.observe(A, st(t3, 500), now=135), 0)    # jumped into a track
+        self.assertEqual(L.observe(A, st(t3, 515), now=400), 0)    # stale gap
+        self.assertEqual(L.observe(A, {"state": "PLAYING", "track_id": None,
+                                       "position": "0:01:00"}, now=415), 0)  # not ours
+        self.assertEqual(L.observe(A, st(t3, 530), now=430), 0)    # forgotten -> first sight
+        with sp.listening_lock:
+            self.assertEqual(dict(sp.listening), {t1: 15 + 14 + 15 + 5, t2: 8})
+
+    def test_listening_persistence_roundtrip(self):
+        L = self._listen_reset()
+        L.credit("a" * 16, 3600)
+        L.credit("a" * 16, 15)
+        L.credit("b" * 16, 0)          # nothing credited, nothing stored
+        L.write_listening()
+        with sp.listening_lock:
+            sp.listening.clear()
+        L.load_listening()
+        self.assertEqual(L.listened_snapshot(), {"a" * 16: 3615})
+        with open(L._path[0], "w") as f:
+            f.write("{not json")
+        L.load_listening()
+        self.assertEqual(L.listened_snapshot(), {})
+
+    def test_listening_watch_once_is_safe(self):
+        L = self._listen_reset()
+        tid = "4" * 16
+        asked = []
+
+        def fake_status(spk):
+            asked.append(spk["uuid"])
+            if spk["uuid"] == "BAD":
+                raise OSError("speaker unreachable")
+            return {"state": "PLAYING", "track_id": tid, "position": "0:00:30"}
+        groups = [{"uuid": "BAD", "ip": "1.1.1.3", "backend": "sonos"},
+                  {"uuid": "OK", "ip": "1.1.1.4", "backend": "sonos"},
+                  {"uuid": "CAST_none", "ip": "1.1.1.5", "backend": "cast"}]
+        old_status, old_speakers = L.get_status, list(sp.speakers)
+        L.get_status = fake_status
+        sp.speakers[:] = groups
+        try:
+            L.watch_once(now=1000)     # must not raise; cast w/o session skipped
+            self.assertEqual(asked, ["BAD", "OK"])
+            asked.clear()
+            L.watch_once(now=1001)     # OK was just sampled: skipped
+            self.assertEqual(asked, ["BAD"])
+        finally:
+            L.get_status = old_status
+            sp.speakers[:] = old_speakers
+
+    def test_api_most_played(self):
+        L = self._listen_reset()
+        make_mp3(os.path.join(self.tmp, "x.mp3"), "X-Set", "X-DJ")
+        make_mp3(os.path.join(self.tmp, "y.mp3"), "Y-Set", "Y-DJ")
+        make_mp3(os.path.join(self.tmp, "z.mp3"), "Z-Set", "Z-DJ")
+        sp.scan_all()
+        ids = {t["title"]: t["id"] for t in sp.tracks}
+        L.credit(ids["X-Set"], 600)
+        L.credit(ids["Y-Set"], 24000)
+        L.credit("f" * 16, 99999)      # no longer in the library: left alone, not listed
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            def get(p):
+                with urllib.request.urlopen(
+                        "http://127.0.0.1:%d%s" % (port, p), timeout=5) as r:
+                    return json.load(r)
+            mp = get("/api/most_played")
+            self.assertEqual([t["title"] for t in mp["tracks"]], ["Y-Set", "X-Set"])
+            self.assertEqual(mp["tracks"][0]["listened"], 24000)
+            self.assertEqual(mp["tracks"][0]["artist"], "Y-DJ")
+            self.assertEqual(mp["total"], 2)
+            one = get("/api/most_played?limit=1")
+            self.assertEqual([t["id"] for t in one["tracks"]], [ids["Y-Set"]])
+            tr = {t["title"]: t["listened"] for t in get("/api/tracks")["tracks"]}
+            self.assertEqual(tr, {"X-Set": 600, "Y-Set": 24000, "Z-Set": 0})
+        finally:
+            httpd.shutdown()
+
 
     def test_engine_imports_only_stdlib(self):
         """Supply-chain guard: the engine must import only the Python standard

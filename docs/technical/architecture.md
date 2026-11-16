@@ -31,6 +31,7 @@ Module map (all under `draai/`), one line each:
 | `draai/importer.py` | Hands URLs to the user's own yt-dlp; imports audio into `<first folder>/Imported/` — `draai/importer.py:24`. |
 | `draai/cast.py` | Google Cast (CASTV2) backend: mDNS discovery, TLS session, cast-specific play/queue/volume — `draai/cast.py:137`, `draai/cast.py:205`. |
 | `draai/backends.py` | Sonos backend (SSDP/SOAP/UPnP) + the backend dispatch layer that routes each call to Sonos or Cast, resume positions — `draai/backends.py:1-3`. |
+| `draai/listening.py` | Time listened per track: `listening.json` store, the shared `observe()` delta-crediting helper, and the daemon watcher thread that samples every speaker group every `LISTEN_INTERVAL` (15s) — see its module docstring for the crediting rule. |
 | `draai/server.py` | HTTP `Handler` (JSON API, media serving with Range, UI serving), QR generator, built-in `PAGE` fallback — `draai/server.py:1`, `draai/server.py:286`. |
 
 `draai/player_ui.html` also lives inside the package directory as the
@@ -63,10 +64,11 @@ importer                         (importer.py:8-11 imports state, media, library
 backends                         (backends.py:16-26 imports state, constants, util, media, cast)
    ↑
 playlists                        (playlists.py:5-6 imports state, backends — for browse_queue)
+listening                        (imports state, constants, util, cast, backends — for get_status)
    ↑
 server                           (server.py:11-24 imports nearly everything above)
    ↑
-__main__                         (root: imports state, constants, config, library, backends, server)
+__main__                         (root: imports state, constants, config, library, backends, listening, server)
 ```
 
 Verified by grepping every `import`/`from` line in the package (no
@@ -101,7 +103,8 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    (`:84-89`).
 3. `load_config()` (`draai/config.py:9`) then `load_positions()`
    (`draai/backends.py:309`) — populate `state.config` and
-   `state.positions` from disk before the server exists.
+   `state.positions` from disk before the server exists. `load_listening()`
+   (`draai/listening.py`) then loads `state.listening` from `listening.json`.
 4. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
    `port` in `range(PREFERRED_PORT, PREFERRED_PORT + 20)`
    (`draai/__main__.py:94-100`); `PREFERRED_PORT` is `8765`
@@ -115,7 +118,13 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    `refresh_speakers()` (`draai/backends.py:73`) up to 4 times with a
    4-second sleep between attempts, stopping early if speakers are found.
    This exists because SSDP discovery is often slow right after the Mac's
-   network stack comes up at boot.
+   network stack comes up at boot. Right after it, `start_watcher()`
+   (`draai/listening.py`) starts the **daemon listening watcher**: every
+   `LISTEN_INTERVAL` (15s) it samples each speaker group's status and
+   credits time listened per track, so play time is counted with no
+   browser open. It skips a group the UI polled in the last half interval,
+   skips Cast devices with no live DRAAI session (it never opens one), and
+   swallows every per-speaker error.
 7. Unless `--headless` is in `sys.argv`, a one-shot `threading.Timer(0.8,
    ...)` opens the control panel in the default browser via
    `webbrowser.open(url)` (`:131-132`). `--headless` is what the launchd
@@ -189,6 +198,9 @@ All persistent state lives under one app-support directory,
 │                       #   last_speaker, ui prefs (theme/group/sort)
 ├── positions.json      # POSITIONS_PATH, constants.py:23 — resume positions
 │                       #   for tracks longer than RESUME_MIN_TRACK (600s)
+├── listening.json      # LISTENING_PATH, constants.py — {track_id: seconds
+│                       #   listened}; debounced 10s write; entries for
+│                       #   tracks no longer in the library are kept
 └── analysis/            # ANALYSIS_DIR, analysis.py:12 — one <track-id>.json
                           #   per analyzed track, keyed with a "v" field
                           #   (ANALYSIS_VERSION, analysis.py:16) to invalidate
@@ -219,6 +231,11 @@ they travel with the music, not the app.
   (e.g. `draai/library.py:287`, `draai/server.py:328`).
 - `state.positions_lock` (`draai/state.py:23`) separately guards the
   resume-positions dict, written from playback-status polling.
+- `state.listening_lock` guards the `{track_id: seconds}` listening dict;
+  `listening._last_lock` guards the per-speaker last sample. Both the
+  watcher thread and `/api/status` requests feed the same `observe()`, and
+  a sample taken earlier than the newest recorded one is dropped, so the
+  two never double-count.
 - `analysis.analysis_lock` (`draai/analysis.py:20`) guards the
   in-progress/error tracking dict `analysis_state` so concurrent
   `/api/analysis` requests for the same track don't spawn duplicate

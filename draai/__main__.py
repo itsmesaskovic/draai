@@ -13,6 +13,7 @@ from draai.config import load_config
 from draai.library import scan_all
 from draai.backends import load_positions, refresh_speakers
 from draai.server import Handler
+from draai.listening import load_listening, start_watcher
 
 
 def _launch_args():
@@ -89,6 +90,7 @@ def main():
         return
     load_config()
     load_positions()
+    load_listening()
 
     httpd = None
     for port in range(PREFERRED_PORT, PREFERRED_PORT + 20):
@@ -127,6 +129,7 @@ def main():
                 break
             time.sleep(4)
     threading.Thread(target=warmup, daemon=True).start()
+    start_watcher()   # credits time listened per track, browser or not
 
     if "--headless" not in sys.argv:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
