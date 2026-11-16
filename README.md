@@ -19,7 +19,9 @@ devices, side by side — including a Chromecast Audio, which takes hi-res FLAC
 (up to 96 kHz / 24-bit). Both show up together under Rooms. (Sonos and Cast
 can't play *in sync with each other*, but each plays perfectly on its own.)
 
-No Sonos account. No internet needed. Nothing leaves your home network.
+No Sonos account. No internet needed. Nothing leaves your home network —
+with one opt-in exception: if you have yt-dlp installed, a set imported with
+it can show its video while you watch (see [Privacy & security](#privacy--security)).
 
 ## What it looks like
 
@@ -271,6 +273,12 @@ and yt-dlp saves the audio — with title, artist and cover art embedded —
 into an `Imported` subfolder of your first library folder
 (e.g. `~/Music/Imported/`). The library rescans automatically.
 
+Sets imported this way remember where they came from. When one plays and you
+open the full-screen view, DRAAI shows the set's video beside the waveform —
+muted, in sync with your speakers — streamed straight from the source site.
+Like the import, this reaches the internet; see
+[Privacy & security](#privacy--security).
+
 **Use this only for content you have the right to download**: your own
 uploads, Creative Commons-licensed material, public-domain recordings, and
 content whose owner permits it. Downloading may otherwise violate a
@@ -352,10 +360,18 @@ policy asserts:
   and send it somewhere.
 - **The interface loads nothing from the internet** — no CDN, no web fonts, no
   external scripts. It works with the internet unplugged, so there's nothing to
-  track you with.
+  track you with. The one exception is the set video below.
 - **Every connection stays on your LAN** — the engine only ever talks to your
-  speakers, on your own network. The one exception is the optional yt-dlp
-  import, which uses *your* yt-dlp on a URL *you* paste.
+  speakers, on your own network. The exceptions both need *your* yt-dlp: the
+  import, which runs on a URL *you* paste, and the set video.
+- **Set video, honestly** — when you open the full-screen view of a set imported
+  with yt-dlp, your yt-dlp asks the source site (e.g. YouTube) for the video,
+  and your browser streams it from there while you watch. That site sees your
+  IP address and that you're watching that video, just as if you watched it
+  there. Nothing else goes along: no account, no cookies, no library data.
+  Without yt-dlp, or for music that has no source link, nothing is fetched.
+  Details in
+  [docs/technical/security-and-privacy.md](docs/technical/security-and-privacy.md).
 
 Two automated tests enforce the two rules most easily broken by a future
 change — "no pip dependency" and "the UI never phones home" — so a regression

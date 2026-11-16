@@ -34,7 +34,12 @@ so a few things are known design boundaries rather than vulnerabilities:
 
 - Any path by which data leaves your machine to somewhere other than your own
   speakers or your own yt-dlp — this would break the core promise (see the
-  egress inventory in the doc above).
+  egress inventory in the doc above). The set video is the one known exception:
+  the browser streams a set's video from the source site's video CDN, as
+  described in
+  [docs/technical/security-and-privacy.md](docs/technical/security-and-privacy.md).
+  Anything that sends more than that (library data, the LAN address, other
+  requests) is in scope.
 - Any way a request reaching the engine escapes the media roots (path
   traversal), crashes it, or executes unintended commands.
 - A third-party package sneaking into the import graph, or an external resource

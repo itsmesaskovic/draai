@@ -78,14 +78,16 @@ through the engine so there's a single, local source of truth.
 
 **Egress via optional tools you install.** DRAAI's own code opens no internet
 connection — the inventory above is complete for the engine as shipped. Two
-*optional* tools can reach beyond the LAN, and neither is installed by default,
-required for any feature, or bundled: DRAAI detects them at runtime with
-`find_tool()` and works without them.
+*optional* tools can reach beyond the LAN (three uses, below). Neither is
+installed by default or bundled: DRAAI detects them at runtime with
+`find_tool()` and the core player works without them. Only the features
+built on them need them — yt-dlp for import and for set video, `beat_this`
+for the better beat detector.
 
 | Tool | When it reaches out | Notes |
 | --- | --- | --- |
 | `yt-dlp` | You paste a URL and press import | User-initiated per request. `CLAUDE.md` rule 4 — no site-specific downloader code ships here. |
-| `yt-dlp` (set video) | You open the full-screen view of a set that has a source link | One metadata request (`-J`, nothing downloaded) to the source site via `GET /api/video`, cached per set until its stream links expire. The browser then streams the video straight from the source site's video CDN while you watch. |
+| `yt-dlp` (set video) | You open the full-screen view of a set that has a source link, or the next set with a link starts while it is open | One metadata request (`-J`, nothing downloaded) to the source site via `GET /api/video`, cached per set until its stream links expire. The browser then streams the video straight from the source site's video CDN while you watch. |
 | `beat_this` | First analysis of a track, to fetch its model **once** | Not per-request and not visible in the UI, so it is called out here explicitly. Avoid it entirely by placing the checkpoint at `<config>/beat_this.ckpt` — DRAAI then passes `--model <path>` and the download path never runs. |
 
 The `beat_this` case is the one worth stating plainly, because it is the only
@@ -103,7 +105,9 @@ argv list, no shell, `--` before the URL) to ask the source site for the
 set's video streams, and the browser plays the video directly from that
 site's video CDN while you watch. So the source site sees your IP and that
 you are watching that video — the same as watching it there. Nothing else is
-sent: no account, no cookies, no library data. Without yt-dlp installed, or
+sent: no account, no cookies, no library data, and no `Referer` — the UI's
+`<meta name="referrer" content="no-referrer">` keeps the engine's LAN address
+out of the CDN request. Without yt-dlp installed, or
 for a set without a source link, nothing happens. The link itself never
 leaves the engine except as yt-dlp's argument; `/api/tracks` only exposes
 `has_video`. `CLAUDE.md` rule 3 records this exception.
