@@ -4,7 +4,7 @@
 
 ## Purpose
 
-`player_ui.html` is the full-featured player interface: library browsing (home shelves/songs/queue/playlists), room control and grouping, EQ, sleep timer, yt-dlp import status, drag-reorder queue, multi-select, folder/artist grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
+`player_ui.html` is the full-featured player interface: library browsing (home shelves/songs/queue/playlists), room control and grouping, EQ, sleep timer, yt-dlp import status, drag-reorder queue, multi-select, folder/artist/album grouping, a fullscreen "now playing" view with an album-driven color wash and an optional vinyl-deck animation, and OS media-key integration. It talks to the engine only through `fetch()` calls to `/api/*` (see `draai/server.py`). It is **assembled from partials** by `draai/ui.py`'s `assemble_ui()`, driven by `ui/manifest.txt`: a shared core (`ui/00-head.html`, `ui/css/*.css`, `ui/40-body.html`, `ui/70-script.html`, `ui/90-boot.html`) plus one directory per full-screen mode under `ui/modes/` (`np`, `amp`, `spectrum`, `drive`), each contributing an `.html`, a `.css` and a `.js`. The engine calls `assemble_ui()` inside `_load_ui()` on every request, so editing a partial and reloading is enough — there is no build step and nothing to watch.
 
 **Never hand-edit a top-level `player_ui.html`.** It is a git-ignored build artifact produced by `build.py` for the `.pyz`, and `_load_ui()` gives a file in the cwd precedence over the partials — so a stale one silently masks every change you make in `ui/`. If a UI edit appears to do nothing, check for one before debugging anything else.
 
@@ -90,7 +90,7 @@ Flow: `getArt()` (`player_ui.html:679-687`) loads the track art image, then:
 
 ### Home tab
 
-- The first segmented tab is **Home** (`data-view="home"`, the default `A.view`). `renderContent()` hands off to `renderHome(c)` (`ui/90-boot.html`) whenever the view is `home` and the search box is empty; typing a query switches the view to Songs (`tracks`) results, as the old Albums tab did. The album wall is no longer rendered from any tab (album-detail code still exists for now). The old "library of loose songs opens in Songs" auto-switch in `buildAlbums()` is gone — Home is always the landing view.
+- The first segmented tab is **Home** (`data-view="home"`, the default `A.view`). `renderContent()` hands off to `renderHome(c)` (`ui/90-boot.html`) whenever the view is `home` and the search box is empty; typing a query switches the view to Songs (`tracks`) results, as the old Albums tab did. There is no album wall or album-detail page any more: albums live on as the Songs view's "By album" grouping (see below). Home is always the landing view.
 - Three shelves, in order, each omitted when empty (`.hshelf` with an `h3`):
   - **Continue listening** — tracks from `/api/tracks` with `resume > 0`, sorted by `seen` desc (ties: title), max 6. Rows (`homeRow`, built on the `.row` shell) show art, title/artist, `resumes at M:SS` (or `H:MM:SS`, via `fmt`) and, when `dur > 0`, a `.hprog` progress bar at `resume/dur`.
   - **Most played** — `A.mostPlayed`, filled by `loadMostPlayed()` from `GET /api/most_played?limit=10`; ranked rows (`.hrow.hrank`, `.hnum`) with `fmtListened(listened)`: `>= 3600` → `"6h 40m"`, `>= 60` → `"45m"`, else `""` (row skipped). Refetched on every `refreshTracks()` and when the Home tab is clicked; a failure just empties the list (shelf hidden, no toast). In `DEMO` mode it is always empty.
@@ -104,9 +104,10 @@ Flow: `getArt()` (`player_ui.html:679-687`) loads the track art image, then:
 - Rows have hairline dividers (`border-bottom:1px solid var(--line)`, `player_ui.html:141`), and the whole list is centered with a max width via `.listwrap{max-width:1160px;margin:0 auto}` (`player_ui.html:139`).
 - The queue view (`renderQueue`, `player_ui.html:928-943`) reuses the same row shell but swaps the actions for a drag handle (`.qgrab`, drag-to-reorder wired at `player_ui.html:1370-1382` via `pointermove`/`pointerup`, calling `/api/queue_move`) and a remove button.
 
-### Collapsible folder/artist groups
+### Collapsible folder/artist/album groups
 
-- `renderSongRows(view)` (`player_ui.html:1248-1275`) only groups when `A.group !== "none"`; it buckets tracks by folder or by artist, builds a `.ghead` header per group (name, track count, play-all/queue-all/reveal-in-Finder buttons, a caret that rotates via `.ghead.collapsed .gcaret{transform:rotate(-90deg)}`, `player_ui.html:255`), and renders that group's `.rows` only if it is not collapsed.
+- `renderSongRows(view)` (`player_ui.html:1248-1275`) only groups when `A.group !== "none"`; `groupOf(t)` returns each track's group key and header label (folder: last path segment; artist; album: `album — artist`), and it buckets tracks by that key, builds a `.ghead` header per group (name, track count, play-all/queue-all/reveal-in-Finder buttons, a caret that rotates via `.ghead.collapsed .gcaret{transform:rotate(-90deg)}`, `player_ui.html:255`), and renders that group's `.rows` only if it is not collapsed.
+- "By album" (`A.group==="album"`) keys groups as `"album:" + (album||"Unknown") + "§" + artist`, so same-named albums by different artists stay apart; untagged tracks form `Unknown` groups that always sort last. The header's play-all / add-all buttons are how you play an album.
 - Collapse state is keyed by `"<group-mode>:<group-name>"` and stored in the `A.collapsed` `Set` (`player_ui.html:1263,1266`), persisted through `/api/prefs` on every toggle (`gc` click handler, `player_ui.html:1307`, calls `savePrefs()`). A "collapse all / expand all" button (`#collapseAllBtn`, `player_ui.html:1312`) operates over `window.GROUPKEYS`, the list of keys present in the current render.
 
 ## Slim remote (/remote)
@@ -162,7 +163,7 @@ All line numbers are into `/Users/sasa/Dev/draai/player_ui.html` unless a differ
 - `trackRow`: `:899-913`
 - `renderQueue` (queue row markup + drag handle + remove): `:928-943`
 - Queue drag-reorder pointer handlers: `:1370-1382`
-- `renderSongRows` (folder/artist grouping + collapse): `:1247-1275`
+- `groupOf` + `renderSongRows` (folder/artist/album grouping + collapse): `:1247-1275`
 - Group collapse/expand click handlers: `:1307,1312`
 - `.ghead` / caret rotation CSS: `:248-255`
 - Class-collision note (`.vdisc`/`.vspin` vs `.spin`/`.disc`): `:276-284`, `:382`

@@ -139,23 +139,18 @@ async function toggleGroup(memberUuid){ const g=A.speakers.find(s=>s.uuid===grou
 }
 
 /* ---------------- library rendering ---------------- */
-function buildAlbums(){ const map=new Map();
-  for(const t of A.tracks){ const key=(t.album||"Unknown")+"§"+(t.artist||""); if(!map.has(key)) map.set(key,{key,album:t.album||"Unknown",artist:t.artist||"Unknown artist",tracks:[],cover:null});
-    const a=map.get(key); a.tracks.push(t); if(a.cover==null && t.has_art!==false) a.cover=t.id; }
-  A.albums=[...map.values()]; }
 function filtered(){ const q=A.query.trim().toLowerCase(); if(!q) return A.tracks;
   return A.tracks.filter(t=>(t.title+" "+(t.artist||"")+" "+(t.album||"")).toLowerCase().includes(q)); }
 function renderContent(){ const c=$("#content");
   $$(".seg").forEach(s=>s.classList.toggle("on",s.dataset.view===A.view));
   if(A.view==="queue") return renderQueue(c);
-  if(A.albumKey) return renderAlbumDetail(c);
   const list=filtered();
   if(A.view==="home" && !A.query.trim()) return renderHome(c);
   const view=sortTracks(list); window.VIEWLIST=view;
-  const gkeys = A.group==="none" ? [] : [...new Set(view.map(t=> A.group+":"+(A.group==="folder"?(t.folder||"Library"):(t.artist||"Unknown artist"))))];
+  const gkeys = A.group==="none" ? [] : [...new Set(view.map(t=>groupOf(t).key))];
   const allColl = gkeys.length>0 && gkeys.every(k=>A.collapsed.has(k));
   const ctl=`<div class="qtools">
-    <select class="mini" id="grpSel"><option value="none"${A.group==="none"?" selected":""}>No grouping</option><option value="folder"${A.group==="folder"?" selected":""}>By folder</option><option value="artist"${A.group==="artist"?" selected":""}>By artist</option></select>
+    <select class="mini" id="grpSel"><option value="none"${A.group==="none"?" selected":""}>No grouping</option><option value="folder"${A.group==="folder"?" selected":""}>By folder</option><option value="artist"${A.group==="artist"?" selected":""}>By artist</option><option value="album"${A.group==="album"?" selected":""}>By album</option></select>
     <select class="mini" id="sortSel"><option value="title"${A.sort==="title"?" selected":""}>Title</option><option value="artist"${A.sort==="artist"?" selected":""}>Artist</option><option value="added"${A.sort==="added"?" selected":""}>Date added</option></select>
     <button class="btn" id="dirBtn" title="Sort direction">${A.dir>0?"↑":"↓"}</button>
     ${A.group!=="none"?`<button class="btn" id="collapseAllBtn">${allColl?"Expand all":"Collapse all"}</button>`:""}
@@ -169,7 +164,7 @@ function fmtListened(sec){ sec=Math.round(+sec||0); const h=(sec/3600)|0, m=(sec
   return sec>=3600 ? h+"h "+m+"m" : sec>=60 ? m+"m" : ""; }
 async function loadMostPlayed(){ if(DEMO){ A.mostPlayed=[]; return; }
   try{ const d=await api("/api/most_played?limit=10"); A.mostPlayed=d.tracks||[]; }catch(e){ A.mostPlayed=[]; }
-  if(A.view==="home" && !A.query.trim() && !A.albumKey) renderContent(); }
+  if(A.view==="home" && !A.query.trim()) renderContent(); }
 function homeRow(t,lead,sub,extra){ const playing=String(t.id)===String(A.curId);
   const art=(t.has_art===false)?"":`<img loading="lazy" src="${DEMO?Demo.art(t.id):"/api/art?id="+enc(t.id)}" onerror="this.remove()" alt="">`;
   return `<div class="row hrow${lead?" hrank":""}${playing?" playing":""}" data-play="${t.id}">${lead?`<span class="hnum">${lead}</span>`:""}
@@ -212,20 +207,6 @@ function trackRow(t,idx){ const playing=String(t.id)===String(A.curId);
     <div class="rright">${t.album?`<span class="alb">${esc(t.album)}</span>`:""}
       <div class="acts"><button class="iconbtn" data-enqueue="${t.id}" title="Add to queue · ⌥ Play next"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h13M3 12h9M3 18h9M17 12v6M14 15h6"/></svg></button></div>
     </div></div>`;
-}
-function renderAlbumDetail(c){ const a=A.albums.find(x=>x.key===A.albumKey); if(!a){ A.albumKey=null; return renderContent(); }
-  c.innerHTML=`<div class="crumb" id="backCrumb"><svg class="ic" viewBox="0 0 24 24" style="width:16px"><path d="M15 18l-6-6 6-6"/></svg>Albums</div>
-    <div class="listhead" style="align-items:center;gap:22px">
-      <div style="display:flex;align-items:center;gap:22px">
-        <div class="cov" style="width:132px;height:132px;flex:none">${a.cover!=null?`<img src="${DEMO?Demo.art(a.cover):"/api/art?id="+enc(a.cover)}" onerror="this.style.display='none';this.parentNode.style.background=window.gradFor('${esc(a.key)}')" alt="">`:`<div style="width:100%;height:100%;background:${gradFor(a.key)}"></div>`}</div>
-        <div><div style="font-size:11.5px;letter-spacing:.16em;color:rgb(var(--ac));text-transform:uppercase;font-weight:600">Album</div>
-          <h2 style="font-size:30px;margin:6px 0 4px">${esc(a.album)}</h2>
-          <div class="sub">${esc(a.artist)} · ${a.tracks.length} tracks</div>
-          <button class="btn acc" id="playAlbum" style="margin-top:14px;width:auto;padding:10px 22px"><svg class="ic fill" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Play album</button>
-          <button class="btn" data-nalbum style="margin:14px 0 0 8px;width:auto;padding:10px 16px">Play next</button>
-          <button class="btn" data-qalbum style="margin:14px 0 0 8px;width:auto;padding:10px 16px">Add to queue</button></div>
-      </div></div>
-    <div class="rows">${a.tracks.map((t,i)=>trackRow(t,i+1)).join("")}</div>`;
 }
 function renderQueue(c){ $("#qCount").textContent=A.queue.length||"";
   c.innerHTML=`<div class="listwrap"><div class="listhead"><div><h2>Play queue</h2></div><div class="qtools">
@@ -315,13 +296,13 @@ setInterval(()=>{ if($("#np").classList.contains("open")){ const d=new Date(); $
 
 /* ---------------- events ---------------- */
 function wire(){
-  $$(".seg").forEach(s=>s.addEventListener("click",()=>{ A.view=s.dataset.view; A.viewChosen=true; A.albumKey=null; renderContent(); if(A.view==="home") loadMostPlayed(); }));
-  $("#searchInput").addEventListener("input",e=>{ A.query=e.target.value; A.albumKey=null; if(A.view==="queue"||A.view==="home")A.view="tracks"; renderContent(); });
+  $$(".seg").forEach(s=>s.addEventListener("click",()=>{ A.view=s.dataset.view; A.viewChosen=true; renderContent(); if(A.view==="home") loadMostPlayed(); }));
+  $("#searchInput").addEventListener("input",e=>{ A.query=e.target.value; if(A.view==="queue"||A.view==="home")A.view="tracks"; renderContent(); });
   // delegated clicks
   document.addEventListener("click",e=>{
     const t=(a)=>e.target.closest(a);
     const enq=t("[data-enqueue]"), rm=t("[data-remove]"), play=t("[data-play]"), jump=t("[data-jump]");
-    const sel=t("[data-select]"), grp=t("[data-group]"), ung=t("[data-ungroup]"), alb=t("[data-album]"), c=t("[data-cmd]"), tog=t("[data-toggle]"), slp=t("[data-sleep]");
+    const sel=t("[data-select]"), grp=t("[data-group]"), ung=t("[data-ungroup]"), c=t("[data-cmd]"), tog=t("[data-toggle]"), slp=t("[data-sleep]");
     if(enq){ e.stopPropagation(); const eid=enq.dataset.enqueue;
       if(e.altKey){ guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids:[eid],next:true}); toast("Playing next",true); poll(); }); }
       else { enqueue([eid]); }
@@ -332,12 +313,9 @@ function wire(){
     if(sel){ selectRoom(sel.dataset.select); return; }
     if(tog){ toggleGroup(tog.dataset.toggle); return; }
     if(slp){ A.sleepMin=+slp.dataset.sleep; renderSleep(); cmd("sleep",A.sleepMin); return; }
-    if(alb){ A.albumKey=alb.dataset.album; renderContent(); return; }
     if(play){ playTracks([play.dataset.play]); return; }
     if(jump){ guard(async()=>{ await api("/api/queue_jump",{speaker:A.speaker.uuid,no:+jump.dataset.jump}); posSec=0;clockReset();playing=true; poll(); }); return; }
     if(c){ cmd(c.dataset.cmd); return; }
-    if(t("#backCrumb")){ A.albumKey=null; renderContent(); return; }
-    if(t("#playAlbum")){ const a=A.albums.find(x=>x.key===A.albumKey); if(a)playTracks(a.tracks.map(x=>x.id)); return; }
     if(t("#clearQueueBtn")){ guard(async()=>{ await api("/api/cmd",{speaker:A.speaker.uuid,action:"clearqueue"}); A.queueIds=[]; poll(); toast("Queue cleared",true); }); return; }
     if(t("#shuffleToggle")||t("#shufBtn")||t("#npShuf")){ toggleShuffle(); return; }
     // close popovers on outside click
@@ -445,7 +423,7 @@ async function refreshState(){ const s=await api("/api/state"); A.speakers=s.spe
   if(!A.speaker && A.speakers.length){ A.speaker=A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers[0]; applyBackendUI(); }
   renderRooms(); }
 async function refreshTracks(){ await guard(async()=>{ const d=await api("/api/tracks?q="); A.tracks=d.tracks||[]; A.trackCount=d.total??A.tracks.length;
-  $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; buildAlbums(); renderContent(); }); loadMostPlayed(); }
+  $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; renderContent(); }); loadMostPlayed(); }
 
 /* ============================================================
    DEMO BACKEND — active only when no real /api responds.
@@ -607,27 +585,34 @@ function sortTracks(list){
   return arr.slice(0,500);
 }
 window.GROUPIDS={};
+/* group key (collapse state, persisted) + header label for the current A.group mode */
+function groupOf(t){
+  if(A.group==="folder"){ const n=t.folder||"Library"; return {key:"folder:"+n,label:n.split("/").pop()||n,unknown:false}; }
+  if(A.group==="album"){ const al=t.album||"Unknown", ar=t.artist||"";
+    return {key:"album:"+al+"§"+ar,label:ar?al+" — "+ar:al,unknown:!t.album}; }
+  const n=t.artist||"Unknown artist"; return {key:"artist:"+n,label:n,unknown:false};
+}
 function renderSongRows(view){
   if(A.group==="none") return `<div class="rows">${view.map((t,i)=>trackRow(t,i+1)).join("")}</div>`;
   const groups=new Map();
   for(const t of view){
-    const k=A.group==="folder" ? (t.folder||"Library") : (t.artist||"Unknown artist");
-    if(!groups.has(k)) groups.set(k,[]);
-    groups.get(k).push(t);
+    const g=groupOf(t);
+    if(!groups.has(g.key)) groups.set(g.key,{...g,ts:[]});
+    groups.get(g.key).ts.push(t);
   }
+  const list=[...groups.values()].sort((a,b)=>a.unknown-b.unknown);   /* stable: Unknown album last */
   window.GROUPIDS={}; window.GROUPKEYS=[];
   let out="";
   let gi=0;
-  for(const [name,ts] of groups){
+  for(const {key,label,ts} of list){
     const gk="g"+(gi++);
     window.GROUPIDS[gk]=ts.map(t=>t.id);
-    const key=A.group+":"+name; window.GROUPKEYS.push(key);
+    window.GROUPKEYS.push(key);
     const coll=A.collapsed.has(key);
-    const short=A.group==="folder" ? (name.split("/").pop()||name) : name;
-    const dirTip=A.group==="folder" && ts[0].dir ? esc(ts[0].dir) : esc(name);
+    const dirTip=esc(A.group==="folder" ? (ts[0].dir||ts[0].folder||"Library") : label);
     out+=`<div class="ghead${coll?" collapsed":""}" data-collapse="${esc(key)}" title="${dirTip}">
       <svg class="gcaret ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-      <b>${esc(short)}</b><small>${ts.length} track${ts.length!==1?"s":""}</small>
+      <b>${esc(label)}</b><small>${ts.length} track${ts.length!==1?"s":""}</small>
       <button class="iconbtn" data-gplay="${gk}" title="Play all"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
       <button class="iconbtn" data-gqueue="${gk}" title="Add all to queue"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h13M3 12h9M3 18h9M17 12v6M14 15h6"/></svg></button>
       ${A.group==="folder"&&!DEMO?`<button class="iconbtn" data-greveal="${esc(ts[0].id)}" title="Open in Finder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>`:""}
@@ -667,8 +652,6 @@ $("#content").addEventListener("click",e=>{
   const gq=T("[data-gqueue]"); if(gq){ e.stopPropagation(); guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids:window.GROUPIDS[gq.dataset.gqueue]||[]}); toast("Added to queue",true); poll(); }); return; }
   const gr=T("[data-greveal]"); if(gr){ e.stopPropagation(); guard(()=>api("/api/reveal",{id:gr.dataset.greveal})); return; }
   const gc=T("[data-collapse]"); if(gc){ e.stopPropagation(); const key=gc.getAttribute("data-collapse"); if(A.collapsed.has(key))A.collapsed.delete(key); else A.collapsed.add(key); savePrefs(); renderContent(); return; }
-  const na=T("[data-nalbum]"); if(na){ e.stopPropagation(); const a=A.albums.find(x=>x.key===A.albumKey); if(a)guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids:a.tracks.map(x=>x.id),next:true}); toast("Album playing next",true); poll(); }); return; }
-  const qa=T("[data-qalbum]"); if(qa){ e.stopPropagation(); const a=A.albums.find(x=>x.key===A.albumKey); if(a)guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids:a.tracks.map(x=>x.id)}); toast("Album added to queue",true); poll(); }); return; }
   if(T("#selBtn")){ e.stopPropagation(); A.selMode=!A.selMode; if(!A.selMode)A.sel.clear(); updateSelBar(); renderContent(); return; }
   if(T("#dirBtn")){ e.stopPropagation(); A.dir*=-1; savePrefs(); renderContent(); return; }
   if(T("#collapseAllBtn")){ e.stopPropagation(); const keys=window.GROUPKEYS||[]; const anyOpen=keys.some(k=>!A.collapsed.has(k)); if(anyOpen)keys.forEach(k=>A.collapsed.add(k)); else keys.forEach(k=>A.collapsed.delete(k)); savePrefs(); renderContent(); return; }

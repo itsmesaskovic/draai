@@ -6,7 +6,6 @@
   .search{max-width:none;order:2;width:100%}
   .segmented{margin-left:0;order:1}
   .scroll{padding:6px 18px 24px}
-  .wall{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:18px 14px}
   .htiles{grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:16px 12px}
   .row{grid-template-columns:44px minmax(0,1fr) auto;gap:12px}
   .row .alb{display:none}
