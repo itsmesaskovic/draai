@@ -81,7 +81,7 @@ function npVideoSync(){
   if(posSec>=end){ if(!v.paused) v.pause(); v.playbackRate=1;
     if(v.currentTime<end-1) v.currentTime=end;                   // e.g. the audio jumped past the end
     return; }
-  const want=posSec, d=v.currentTime-want;
+  const want=Math.max(0,posSec-A.npVidOff), d=v.currentTime-want;   // npVidOff > 0 shows the video later
   if(v.ended){ v.currentTime=want; return; }                     // audio sought back below the end: seek, play next tick
   if(!playing){ if(!v.paused) v.pause(); v.playbackRate=1; if(Math.abs(d)>2) v.currentTime=want; return; }
   if(v.paused){ const p=v.play(); if(p&&p.catch) p.catch(()=>{}); }
@@ -90,7 +90,8 @@ function npVideoSync(){
   const buffering=NPV.waiting || v.readyState<3;
   if(buffering) v.playbackRate=1;
   else if(Math.abs(d)>2){ v.currentTime=want; v.playbackRate=1; }
-  else if(Math.abs(d)>0.15) v.playbackRate=d>0?0.95:1.05;
+  else if(Math.abs(d)>0.25) v.playbackRate=d>0?0.95:1.05;
+  else if(Math.abs(d)>0.04) v.playbackRate=d>0?0.98:1.02;   // lips notice ~1 frame: keep it tight, gently
   else v.playbackRate=1;
   // step-down: after 15 s of playback, judge every 10 s window on dropped frames and stalls
   if(v.paused || !NPV.shown) return;
@@ -135,3 +136,15 @@ function applyNpViz(){
 $$(".npvsb").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation();
   if(A.npViz===b.dataset.npviz) return;
   A.npViz=b.dataset.npviz; applyNpViz(); savePrefs(); }));
+
+/* ---- Lip sync nudge ----
+   The speaker reports where it is in the track, but what you hear can trail that by a
+   speaker-specific amount. A.npVidOff (seconds, prefs key npVidOff, -1..1, steps of
+   25 ms) shifts the video: positive shows it later. Buttons beside the switch, or [ and ]. */
+function applyNpVidOff(){ const ms=Math.round(A.npVidOff*1000);
+  const el=$("#npOffVal"); if(el) el.textContent=(ms>0?"+":"")+ms+" ms"; }
+function npVidNudge(dir){ A.npVidOff=clamp(Math.round((A.npVidOff+dir*0.025)*1000)/1000,-1,1);
+  applyNpVidOff(); savePrefs(); }
+$$("[data-npoff]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); npVidNudge(+b.dataset.npoff); }));
+document.addEventListener("keydown",e=>{ if(e.target.tagName==="INPUT" || !NPV.shown) return;
+  if(e.key==="[") npVidNudge(-1); else if(e.key==="]") npVidNudge(1); });

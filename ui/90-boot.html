@@ -826,7 +826,7 @@ $("#themeBtn").addEventListener("click",()=>{
 let prefsTimer=null;
 function savePrefs(){
   clearTimeout(prefsTimer);
-  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,npViz:A.npViz,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
+  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,npViz:A.npViz,npVidOff:A.npVidOff,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
 }
 async function loadPrefs(){
   try{ const p=await api("/api/prefs");
@@ -836,9 +836,10 @@ async function loadPrefs(){
     if(p.dir)A.dir=p.dir;
     if(p.driveCar)A.driveCar=p.driveCar;
     if(p.npViz==="wave"||p.npViz==="spec")A.npViz=p.npViz;
+    if(typeof p.npVidOff==="number"&&isFinite(p.npVidOff))A.npVidOff=clamp(p.npVidOff,-1,1);
     if(Array.isArray(p.collapsed))A.collapsed=new Set(p.collapsed);
   }catch(e){}
-  applyTheme(); applyNpViz();
+  applyTheme(); applyNpViz(); applyNpVidOff();
 }
 
 /* ---------------- vinyl deck ---------------- */
