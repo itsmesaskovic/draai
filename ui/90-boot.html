@@ -44,8 +44,14 @@ function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.sta
     }
   }
   if(cid==null){ const m=A.tracks.find(t=>t.title===A.status.title); cid=m?m.id:(A.status.title||null); }
-  if(cid!=null && String(cid)!==String(A.curId)){ A.curId=cid; onTrackChange(cid); }
+  if(cid!=null && String(cid)!==String(A.curId)){ const had=A.curId!=null; A.curId=cid; onTrackChange(cid); if(had) refreshHomeSoon(); }
+  else if(wasPlaying && st==="PAUSED_PLAYBACK") refreshHomeSoon();   /* resume position just moved */
 }
+/* Continue listening reads resume/seen/dur from /api/tracks: refetch it on the moments
+   those change (track switch, pause) while Home is on screen. Never on every poll. */
+let homeRefreshing=false;
+async function refreshHomeSoon(){ if(homeRefreshing || A.view!=="home" || A.query.trim()) return;
+  homeRefreshing=true; try{ await refreshTracks(); } finally{ homeRefreshing=false; } }
 function onTrackChange(id){ const t=A.tracks.find(x=>String(x.id)===String(id));
   getArt(id); loadAnalysis(id); posSec=parseTime(A.status.position); clockReset();
   const title=(t&&t.title)||A.status.title||"Nothing playing", artist=(t&&t.artist)||"";
@@ -298,7 +304,7 @@ setInterval(()=>{ if($("#np").classList.contains("open")){ const d=new Date(); $
 
 /* ---------------- events ---------------- */
 function wire(){
-  $$(".seg").forEach(s=>s.addEventListener("click",()=>{ A.view=s.dataset.view; A.viewChosen=true; renderContent(); if(A.view==="home") loadMostPlayed(); }));
+  $$(".seg").forEach(s=>s.addEventListener("click",()=>{ A.view=s.dataset.view; renderContent(); if(A.view==="home") refreshTracks(); }));
   $("#searchInput").addEventListener("input",e=>{ A.query=e.target.value; if(A.view==="queue"||A.view==="home")A.view="tracks"; renderContent(); });
   // delegated clicks
   document.addEventListener("click",e=>{
@@ -713,13 +719,15 @@ async function confirmDelete(){ if(delBusy||!delIds.length) return;
   delBusy=true; $("#delGo").disabled=true; $("#delCancel").disabled=true;
   let r=null;
   try{ r=await api("/api/delete",{ids:delIds}); }
-  catch(e){ toast(e.message||String(e)); }
-  delBusy=false; $("#delCancel").disabled=false; closeDeleteModal();
-  if(!r) return;
-  const n=r.deleted||0, failed=r.failed||[];
-  if(n) toast(`Deleted ${n} set${n!==1?"s":""}`,true);
-  if(failed.length) toast(failed[0].error||"Some files couldn't be deleted.");
-  clearSel(); await refreshTracks();
+  catch(e){ /* the engine's 400/403 sentences pass through; a lost connection gets ours */
+    toast(e instanceof TypeError ? "Couldn't reach DRAAI. Check the list to see what was deleted." : (e.message||String(e))); }
+  finally{
+    delBusy=false; $("#delCancel").disabled=false; closeDeleteModal();
+    if(r){ const n=r.deleted||0, failed=r.failed||[];
+      if(n) toast(`Deleted ${n} set${n!==1?"s":""}`,true);
+      if(failed.length) toast(failed[0].error||"Some files couldn't be deleted."); }
+    clearSel(); await refreshTracks();   /* even when the reply was lost: the list must match the disk */
+  }
 }
 $("#selDel").addEventListener("click",()=>openDeleteModal(selIdsInOrder()));
 $("#delCancel").addEventListener("click",closeDeleteModal);
