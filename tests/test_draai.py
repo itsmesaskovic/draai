@@ -952,6 +952,23 @@ class DraaiTests(unittest.TestCase):
         L.observe(A, {"state": "PLAYING", "track_id": None,
                       "position": "0:01:00", "duration": "0:05:00"}, now=45)
         self.assertEqual(list(L.trackinfo_snapshot()), [tid])       # not ours: ignored
+        # stopped / transitioning samples record nothing
+        other = "d" * 16
+        for st in ("STOPPED", "TRANSITIONING"):
+            L.observe(A, {"state": st, "track_id": other,
+                          "position": "0:00:00", "duration": "1:00:00"}, now=60)
+        self.assertNotIn(other, L.trackinfo_snapshot())
+
+    def test_note_track_only_saves_on_real_change(self):
+        L = self._listen_reset()
+        tid = "e" * 16
+        self.assertTrue(L.note_track(tid, 3600, 1000.0))             # new entry
+        self.assertFalse(L.note_track(tid, 3600, 1030.0))            # seen within 60 s: no churn
+        self.assertFalse(L.note_track(tid, 0, 1060.0))               # unknown dur, 60 s: still no
+        self.assertEqual(L.trackinfo_snapshot()[tid], {"dur": 3600, "seen": 1000.0})
+        self.assertTrue(L.note_track(tid, 3600, 1061.0))             # moved on > 60 s
+        self.assertTrue(L.note_track(tid, 3700, 1062.0))             # duration changed
+        self.assertEqual(L.trackinfo_snapshot()[tid], {"dur": 3700, "seen": 1062.0})
 
     def test_trackinfo_roundtrip_and_corrupt(self):
         L = self._listen_reset()
@@ -968,6 +985,30 @@ class DraaiTests(unittest.TestCase):
             f.write("not json")
         L.load_trackinfo()
         self.assertEqual(L.trackinfo_snapshot(), {})
+        # one malformed entry is skipped; the good ones survive
+        with open(L._info_path[0], "w") as f:
+            json.dump({"b" * 16: {"dur": 5400, "seen": 1700000000.0},
+                       "x" * 16: {"dur": "long", "seen": 1.0},
+                       "y" * 16: "garbage",
+                       "c" * 16: {"dur": 60}}, f)
+        L.load_trackinfo()
+        self.assertEqual(L.trackinfo_snapshot(), {
+            "b" * 16: {"dur": 5400, "seen": 1700000000.0},
+            "c" * 16: {"dur": 60, "seen": 0.0}})
+
+    def test_load_positions_drops_bad_values(self):
+        path = os.path.join(self.tmp, "positions.json")
+        with open(path, "w") as f:
+            json.dump({"a" * 16: 1930, "b" * 16: "soon", "c" * 16: None,
+                       "d" * 16: "1200", "e" * 16: [1]}, f)
+        draai.backends.load_positions(path)
+        with sp.positions_lock:
+            got = dict(sp.positions)
+        self.assertEqual(got, {"a" * 16: 1930, "d" * 16: 1200})
+        with open(path, "w") as f:
+            f.write("not json")
+        draai.backends.load_positions(path)
+        self.assertEqual(sp.positions, {})
 
     def test_api_tracks_resume_dur_seen(self):
         L = self._listen_reset()
@@ -992,6 +1033,7 @@ class DraaiTests(unittest.TestCase):
             self.assertEqual(p["artist"], "P-DJ")      # existing fields unchanged
         finally:
             httpd.shutdown()
+            httpd.server_close()
 
     def test_listening_delta_crediting(self):
         L = self._listen_reset()
@@ -1160,6 +1202,11 @@ class DraaiTests(unittest.TestCase):
         for host in ("localhost:%d" % port, "[::1]:%d" % port):
             self.assertIsNone(draai.deletion.delete_allowed(
                 "::1", dict(good, Host=host, Origin="http://[::1]:%d" % port), port))
+        no_host = {k: v for k, v in good.items() if k != "Host"}
+        self.assertEqual(draai.deletion.delete_allowed("127.0.0.1", no_host, port),
+                         "Deleting only works in DRAAI on this Mac.")
+        self.assertEqual(draai.deletion.delete_allowed("127.0.0.1", dict(good, Origin="null"), port),
+                         "Deleting only works in DRAAI on this Mac.")
 
     def test_delete_removes_file_and_state(self):
         L, ids, port = self._delete_env()
@@ -1175,7 +1222,8 @@ class DraaiTests(unittest.TestCase):
         for tid in (gone, keep):
             with open(os.path.join(draai.analysis.ANALYSIS_DIR, tid + ".json"), "w") as f:
                 f.write("{}")
-        code, body = self._post_delete(port, [gone], self._good_headers(port))
+        # the id twice: de-duplicated, so the second copy isn't a "no longer in library" failure
+        code, body = self._post_delete(port, [gone, gone], self._good_headers(port))
         self.assertEqual((code, body), (200, {"deleted": 1, "failed": []}))
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "gone.mp3")))
         self.assertNotIn(gone, sp.tracks_by_id)

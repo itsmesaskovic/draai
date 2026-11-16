@@ -77,9 +77,9 @@ def _inside_folders(real):
 def delete_tracks(ids):
     """Delete each id's file for good; returns {"deleted": n, "failed": [...]}."""
     deleted, failed = 0, []
+    ids = list(dict.fromkeys(str(i) for i in ids))   # each file once, in the order asked
     playing = playing_track_ids()
     for tid in ids:
-        tid = str(tid)
         with state_lock:
             track = tracks_by_id.get(tid)
         if not track:

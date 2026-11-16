@@ -116,7 +116,12 @@ a library track, it must not be `PLAYING`/`TRANSITIONING` on any speaker
 inside the realpath of one of your configured music folders — a symlink in the
 library that points elsewhere is refused, never followed. Only then is the
 file removed, along with its resume position, time listened, track info and
-cached analysis. At most 500 ids per request.
+cached analysis. At most 500 ids per request; a repeated id is handled once.
+
+Two limits worth knowing. The "is it playing" check fails open: a speaker
+that can't be reached is skipped, so a set playing on it can still be deleted.
+And the inside-the-folders check is only as narrow as your folders: a library
+folder of `/` or `~` makes everything under it deletable.
 
 ## Threat model
 
@@ -167,9 +172,12 @@ are enforced by tests, not just by convention in `CLAUDE.md`:
 - **`test_ui_loads_nothing_from_the_internet`** — assembles the UI and asserts
   no external asset references and only local `fetch()` targets.
 - **`test_delete_guard_rejects`** / **`test_delete_refuses_outside_folders`** —
-  a foreign `Origin`, a foreign `Host`, a non-JSON `Content-Type` or a non-loopback
-  peer gets a 403 and the file survives; a library symlink pointing outside
-  the music folders is refused and its target survives.
+  over HTTP, a foreign `Origin`, a foreign `Host` or a non-JSON `Content-Type`
+  gets a 403 and the file survives. A non-loopback peer, a missing `Host` and
+  `Origin: null` are checked against `delete_allowed()` directly (the test
+  server can only be reached over loopback), which must return the 403
+  sentence. A library symlink pointing outside the music folders is refused
+  and its target survives.
 
 All of them run in `.github/workflows/tests.yml` on every push and PR, so a regression
 is caught before it can ship in a `draai.pyz`.

@@ -204,8 +204,11 @@ All persistent state lives under one app-support directory,
 │                       #   tracks no longer in the library are kept
 ├── trackinfo.json      # TRACKINFO_PATH, constants.py — {track_id: {"dur":
 │                       #   seconds (0 = unknown), "seen": epoch secs}}; set
-│                       #   by observe() on any playing/paused sample of a
-│                       #   DRAAI track; debounced 10s write
+│                       #   by observe() on a PLAYING or PAUSED_PLAYBACK
+│                       #   sample of a DRAAI track, but an entry only
+│                       #   changes (and a save is only scheduled) when dur
+│                       #   changes or seen moves on by > 60s; debounced 10s
+│                       #   write; malformed entries are skipped on load
 └── analysis/            # ANALYSIS_DIR, analysis.py:12 — one <track-id>.json
                           #   per analyzed track, keyed with a "v" field
                           #   (ANALYSIS_VERSION, analysis.py:16) to invalidate

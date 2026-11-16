@@ -96,18 +96,29 @@ def listened_snapshot():
 
 
 # -- per-track duration and last-seen time (trackinfo.json) -------------------
-# Any sample of a DRAAI track (playing or paused) records the track's
+# A PLAYING or PAUSED_PLAYBACK sample of a DRAAI track records the track's
 # duration and the wall-clock time it was last seen on a speaker; the Home
-# screen's Continue-listening shelf reads both through /api/tracks.
+# screen's Continue-listening shelf reads both through /api/tracks. To keep
+# trackinfo.json from being rewritten on every poll, an entry only changes
+# (and a save is only scheduled) when the duration changes or `seen` moves on
+# by more than SEEN_RESOLUTION seconds.
+
+SEEN_RESOLUTION = 60
+
 
 def load_trackinfo(path=None):
+    clean = {}
     try:
         with open(path or _info_path[0]) as f:
             loaded = json.load(f)
-        clean = {str(k): {"dur": int(v.get("dur", 0)), "seen": float(v.get("seen", 0))}
-                 for k, v in loaded.items()}
+        items = loaded.items() if isinstance(loaded, dict) else ()
     except Exception:
-        clean = {}
+        items = ()
+    for k, v in items:
+        try:                               # one bad entry must not cost the rest
+            clean[str(k)] = {"dur": int(v.get("dur", 0)), "seen": float(v.get("seen", 0))}
+        except Exception:
+            pass
     with trackinfo_lock:
         trackinfo.clear()
         trackinfo.update(clean)
@@ -140,15 +151,24 @@ def save_trackinfo_soon():
 
 
 def note_track(tid, dur_sec, now_wall):
-    """Remember a track's duration (when known) and when it was last seen."""
+    """Remember a track's duration (when known) and when it was last seen.
+
+    Returns True when the entry changed (and a save was scheduled)."""
     if not tid:
-        return
+        return False
     dur_sec = int(dur_sec or 0)
+    now_wall = float(now_wall)
     with trackinfo_lock:
-        old = trackinfo.get(tid) or {}
+        old = trackinfo.get(tid)
+        if old is not None:
+            dur_changed = dur_sec > 0 and dur_sec != old.get("dur", 0)
+            if not dur_changed and abs(now_wall - old.get("seen", 0)) <= SEEN_RESOLUTION:
+                return False
+        old = old or {}
         trackinfo[tid] = {"dur": dur_sec if dur_sec > 0 else old.get("dur", 0),
-                          "seen": float(now_wall)}
+                          "seen": now_wall}
     save_trackinfo_soon()
+    return True
 
 
 def trackinfo_snapshot():
@@ -176,7 +196,8 @@ def observe(spk, status, now=None):
             _last.pop(key, None)
             return 0
         _last[key] = (tid, pos, now)
-    note_track(tid, hms_to_sec((status or {}).get("duration") or ""), time.time())
+    if (status or {}).get("state") in ("PLAYING", "PAUSED_PLAYBACK"):
+        note_track(tid, hms_to_sec((status or {}).get("duration") or ""), time.time())
     if not playing or not prev:
         return 0
     elapsed = now - prev[2]

@@ -321,14 +321,24 @@ def play_tracks(spk, ids):
     return len(track_list)
 
 
-def load_positions():
+def load_positions(path=None):
+    """Load positions.json, keeping only entries whose value is a whole number
+    of seconds (a hand-edited or corrupt value must not break /api/tracks)."""
+    clean = {}
     try:
-        with open(POSITIONS_PATH) as f:
+        with open(path or POSITIONS_PATH) as f:
             loaded = json.load(f)
-        positions.clear()
-        positions.update(loaded)
+        items = loaded.items() if isinstance(loaded, dict) else ()
     except Exception:
+        items = ()
+    for k, v in items:
+        try:
+            clean[str(k)] = int(v)
+        except Exception:
+            pass
+    with positions_lock:
         positions.clear()
+        positions.update(clean)
 
 
 def save_positions_soon():
