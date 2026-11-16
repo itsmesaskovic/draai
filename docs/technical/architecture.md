@@ -31,7 +31,7 @@ Module map (all under `draai/`), one line each:
 | `draai/importer.py` | Hands URLs to the user's own yt-dlp; imports audio into `<first folder>/Imported/` — `draai/importer.py:24`. |
 | `draai/cast.py` | Google Cast (CASTV2) backend: mDNS discovery, TLS session, cast-specific play/queue/volume — `draai/cast.py:137`, `draai/cast.py:205`. |
 | `draai/backends.py` | Sonos backend (SSDP/SOAP/UPnP) + the backend dispatch layer that routes each call to Sonos or Cast, resume positions — `draai/backends.py:1-3`. |
-| `draai/listening.py` | Time listened per track: `listening.json` store, the shared `observe()` delta-crediting helper, and the daemon watcher thread that samples every speaker group every `LISTEN_INTERVAL` (15s) — see its module docstring for the crediting rule. |
+| `draai/listening.py` | Time listened per track: `listening.json` store, the `trackinfo.json` store (duration + last-seen per track, `note_track()`), the shared `observe()` delta-crediting helper, and the daemon watcher thread that samples every speaker group every `LISTEN_INTERVAL` (15s) — see its module docstring for the crediting rule. |
 | `draai/server.py` | HTTP `Handler` (JSON API, media serving with Range, UI serving), QR generator, built-in `PAGE` fallback — `draai/server.py:1`, `draai/server.py:286`. |
 
 `draai/player_ui.html` also lives inside the package directory as the
@@ -104,7 +104,8 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
 3. `load_config()` (`draai/config.py:9`) then `load_positions()`
    (`draai/backends.py:309`) — populate `state.config` and
    `state.positions` from disk before the server exists. `load_listening()`
-   (`draai/listening.py`) then loads `state.listening` from `listening.json`.
+   (`draai/listening.py`) then loads `state.listening` from `listening.json`,
+   and `load_trackinfo()` loads `state.trackinfo` from `trackinfo.json`.
 4. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
    `port` in `range(PREFERRED_PORT, PREFERRED_PORT + 20)`
    (`draai/__main__.py:94-100`); `PREFERRED_PORT` is `8765`
@@ -201,6 +202,10 @@ All persistent state lives under one app-support directory,
 ├── listening.json      # LISTENING_PATH, constants.py — {track_id: seconds
 │                       #   listened}; debounced 10s write; entries for
 │                       #   tracks no longer in the library are kept
+├── trackinfo.json      # TRACKINFO_PATH, constants.py — {track_id: {"dur":
+│                       #   seconds (0 = unknown), "seen": epoch secs}}; set
+│                       #   by observe() on any playing/paused sample of a
+│                       #   DRAAI track; debounced 10s write
 └── analysis/            # ANALYSIS_DIR, analysis.py:12 — one <track-id>.json
                           #   per analyzed track, keyed with a "v" field
                           #   (ANALYSIS_VERSION, analysis.py:16) to invalidate

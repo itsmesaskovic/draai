@@ -27,8 +27,9 @@ import threading
 import time
 
 from draai import cast
-from draai.state import listening, listening_lock, _listening_dirty, speakers, state_lock
-from draai.constants import CONFIG_DIR, LISTENING_PATH, LISTEN_INTERVAL
+from draai.state import (listening, listening_lock, _listening_dirty, speakers, state_lock,
+                         trackinfo, trackinfo_lock, _trackinfo_dirty)
+from draai.constants import CONFIG_DIR, LISTENING_PATH, LISTEN_INTERVAL, TRACKINFO_PATH
 from draai.util import hms_to_sec
 from draai.backends import get_status
 
@@ -38,6 +39,7 @@ LISTEN_STALE = 120   # older previous sample: don't trust the delta
 _last = {}           # speaker key -> (track_id, pos_sec, sample_time)
 _last_lock = threading.Lock()
 _path = [LISTENING_PATH]   # mutable so tests can redirect it
+_info_path = [TRACKINFO_PATH]
 
 
 def load_listening(path=None):
@@ -93,6 +95,67 @@ def listened_snapshot():
         return dict(listening)
 
 
+# -- per-track duration and last-seen time (trackinfo.json) -------------------
+# Any sample of a DRAAI track (playing or paused) records the track's
+# duration and the wall-clock time it was last seen on a speaker; the Home
+# screen's Continue-listening shelf reads both through /api/tracks.
+
+def load_trackinfo(path=None):
+    try:
+        with open(path or _info_path[0]) as f:
+            loaded = json.load(f)
+        clean = {str(k): {"dur": int(v.get("dur", 0)), "seen": float(v.get("seen", 0))}
+                 for k, v in loaded.items()}
+    except Exception:
+        clean = {}
+    with trackinfo_lock:
+        trackinfo.clear()
+        trackinfo.update(clean)
+
+
+def write_trackinfo(path=None):
+    path = path or _info_path[0]
+    os.makedirs(os.path.dirname(path) or CONFIG_DIR, exist_ok=True)
+    with trackinfo_lock:
+        data = {k: dict(v) for k, v in trackinfo.items()}
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+
+
+def save_trackinfo_soon():
+    if _trackinfo_dirty[0]:
+        return
+    _trackinfo_dirty[0] = True
+
+    def flush():
+        time.sleep(10)
+        _trackinfo_dirty[0] = False
+        try:
+            write_trackinfo()
+        except Exception:
+            pass
+    threading.Thread(target=flush, daemon=True).start()
+
+
+def note_track(tid, dur_sec, now_wall):
+    """Remember a track's duration (when known) and when it was last seen."""
+    if not tid:
+        return
+    dur_sec = int(dur_sec or 0)
+    with trackinfo_lock:
+        old = trackinfo.get(tid) or {}
+        trackinfo[tid] = {"dur": dur_sec if dur_sec > 0 else old.get("dur", 0),
+                          "seen": float(now_wall)}
+    save_trackinfo_soon()
+
+
+def trackinfo_snapshot():
+    with trackinfo_lock:
+        return {k: dict(v) for k, v in trackinfo.items()}
+
+
 def _key(spk):
     return spk.get("uuid") or spk.get("ip")
 
@@ -113,6 +176,7 @@ def observe(spk, status, now=None):
             _last.pop(key, None)
             return 0
         _last[key] = (tid, pos, now)
+    note_track(tid, hms_to_sec((status or {}).get("duration") or ""), time.time())
     if not playing or not prev:
         return 0
     elapsed = now - prev[2]

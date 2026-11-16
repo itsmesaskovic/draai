@@ -26,3 +26,6 @@ yt_jobs = {}
 listening = {}             # track id -> int seconds listened (listening.json)
 listening_lock = threading.Lock()
 _listening_dirty = [False]
+trackinfo = {}             # track id -> {"dur": sec, "seen": epoch} (trackinfo.json)
+trackinfo_lock = threading.Lock()
+_trackinfo_dirty = [False]

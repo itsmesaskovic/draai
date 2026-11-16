@@ -87,7 +87,7 @@ GET endpoints (`draai/server.py:312-482`):
 | `/favicon.ico` | 321 | Always 204, no favicon shipped |
 | `/media/<id>/<name>` | 325 | Audio streaming, see "Media serving" |
 | `/api/state` | 327 | Speakers, folders, track count, version, last-used speaker |
-| `/api/tracks` | 338 | Library search (`?q=`), returns up to 3000 matches; each carries `listened` (int seconds, 0 if never heard) |
+| `/api/tracks` | 338 | Library search (`?q=`), returns up to 3000 matches; each carries `listened` (int seconds, 0 if never heard), `resume` (int saved resume position from `positions.json`, 0 if none), `dur` (int seconds from `trackinfo.json`, 0 if unknown) and `seen` (float epoch seconds the track was last seen playing/paused, 0 if never) |
 | `/api/status` | 359 | One speaker's transport state, position, volume, current track id (also fed to the listening observer, `status_and_observe` in `draai/listening.py`) |
 | `/api/most_played` | — | `?limit=N` (default 20, 1-500): library tracks with `listened > 0`, sorted by `listened` desc, each `{id, title, artist, has_art, listened}`, plus `total` |
 | `/api/queue` | 367 | That speaker's current play queue |

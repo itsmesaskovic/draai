@@ -24,4 +24,5 @@ POSITIONS_PATH = os.path.join(CONFIG_DIR, "positions.json")
 RESUME_MIN_TRACK = 600      # only remember tracks longer than 10 min
 RESUME_MIN_POS = 90         # ...and positions past 1:30
 LISTENING_PATH = os.path.join(CONFIG_DIR, "listening.json")
+TRACKINFO_PATH = os.path.join(CONFIG_DIR, "trackinfo.json")
 LISTEN_INTERVAL = 15        # seconds between listening-watcher sweeps

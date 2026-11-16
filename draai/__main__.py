@@ -13,7 +13,7 @@ from draai.config import load_config
 from draai.library import scan_all
 from draai.backends import load_positions, refresh_speakers
 from draai.server import Handler
-from draai.listening import load_listening, start_watcher
+from draai.listening import load_listening, load_trackinfo, start_watcher
 
 
 def _launch_args():
@@ -91,6 +91,7 @@ def main():
     load_config()
     load_positions()
     load_listening()
+    load_trackinfo()
 
     httpd = None
     for port in range(PREFERRED_PORT, PREFERRED_PORT + 20):

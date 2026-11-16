@@ -277,6 +277,9 @@ class DraaiTests(unittest.TestCase):
         draai.backends.cast_discover = lambda timeout=4.0: []
         sp.config["folders"] = [self.tmp]
         sp.config["manual_ips"] = []
+        # never let a debounced save reach the real config dir
+        draai.listening._path[0] = os.path.join(self.tmp, "listening.json")
+        draai.listening._info_path[0] = os.path.join(self.tmp, "trackinfo.json")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -921,7 +924,73 @@ class DraaiTests(unittest.TestCase):
             sp.listening.clear()
         with L._last_lock:
             L._last.clear()
+        L._info_path[0] = os.path.join(self.tmp, "trackinfo.json")
+        with sp.trackinfo_lock:
+            sp.trackinfo.clear()
+        with sp.positions_lock:
+            sp.positions.clear()
         return L
+
+    def test_observe_records_trackinfo(self):
+        L = self._listen_reset()
+        A, tid = {"uuid": "A", "ip": "1.1.1.1"}, "a" * 16
+        L.observe(A, {"state": "PLAYING", "track_id": tid,
+                      "position": "0:10:00", "duration": "1:00:00"}, now=0)
+        info = L.trackinfo_snapshot()[tid]
+        self.assertEqual(info["dur"], 3600)
+        self.assertGreater(info["seen"], 0)
+        first_seen = info["seen"]
+        with L.trackinfo_lock:
+            L.trackinfo[tid]["seen"] = first_seen - 100    # pretend it was a while ago
+        L.observe(A, {"state": "PAUSED_PLAYBACK", "track_id": tid,
+                      "position": "0:10:00", "duration": "1:00:00"}, now=15)
+        self.assertGreaterEqual(L.trackinfo_snapshot()[tid]["seen"], first_seen)
+        L.observe(A, {"state": "PLAYING", "track_id": tid,
+                      "position": "0:10:15", "duration": ""}, now=30)
+        self.assertEqual(L.trackinfo_snapshot()[tid]["dur"], 3600)  # kept
+        L.observe(A, {"state": "PLAYING", "track_id": None,
+                      "position": "0:01:00", "duration": "0:05:00"}, now=45)
+        self.assertEqual(list(L.trackinfo_snapshot()), [tid])       # not ours: ignored
+
+    def test_trackinfo_roundtrip_and_corrupt(self):
+        L = self._listen_reset()
+        L.note_track("b" * 16, 5400, 1700000000.0)
+        L.note_track("c" * 16, 0, 1700000500.0)
+        L.write_trackinfo()
+        with sp.trackinfo_lock:
+            sp.trackinfo.clear()
+        L.load_trackinfo(L._info_path[0])
+        self.assertEqual(L.trackinfo_snapshot(), {
+            "b" * 16: {"dur": 5400, "seen": 1700000000.0},
+            "c" * 16: {"dur": 0, "seen": 1700000500.0}})
+        with open(L._info_path[0], "w") as f:
+            f.write("not json")
+        L.load_trackinfo()
+        self.assertEqual(L.trackinfo_snapshot(), {})
+
+    def test_api_tracks_resume_dur_seen(self):
+        L = self._listen_reset()
+        make_mp3(os.path.join(self.tmp, "p.mp3"), "P-Set", "P-DJ")
+        make_mp3(os.path.join(self.tmp, "q.mp3"), "Q-Set", "Q-DJ")
+        sp.scan_all()
+        ids = {t["title"]: t["id"] for t in sp.tracks}
+        id1 = ids["P-Set"]
+        with sp.positions_lock:
+            sp.positions[id1] = 1930
+        L.note_track(id1, 5400, 1700000000.0)
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            with urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/tracks" % port, timeout=5) as r:
+                got = {t["title"]: t for t in json.load(r)["tracks"]}
+            p, q = got["P-Set"], got["Q-Set"]
+            self.assertEqual((p["resume"], p["dur"], p["seen"]), (1930, 5400, 1700000000.0))
+            self.assertEqual((q["resume"], q["dur"], q["seen"]), (0, 0, 0))
+            self.assertEqual(p["artist"], "P-DJ")      # existing fields unchanged
+        finally:
+            httpd.shutdown()
 
     def test_listening_delta_crediting(self):
         L = self._listen_reset()

@@ -10,7 +10,8 @@ from http.server import BaseHTTPRequestHandler
 
 from draai import __version__, state
 from draai.constants import AUDIO_EXTS
-from draai.state import config, speakers, state_lock, tracks, tracks_by_id, yt_jobs
+from draai.state import (config, positions, positions_lock, speakers, state_lock, tracks,
+                         tracks_by_id, yt_jobs)
 from draai.config import save_config
 from draai.media import local_ip_facing
 from draai.library import get_art, scan_all, scan_folder
@@ -19,7 +20,7 @@ from draai.importer import YT_URL_RE, start_import_job, yt_available
 from draai.playlists import delete_playlist, list_playlists, load_playlist, save_playlist
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
-from draai.listening import listened_snapshot, status_and_observe
+from draai.listening import listened_snapshot, status_and_observe, trackinfo_snapshot
 from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms,
     group_join, group_leave, play_tracks, queue_jump, queue_move,
     queue_remove, refresh_speakers, seek_to, set_eq, set_room_volume, set_shuffle,
@@ -414,6 +415,9 @@ class Handler(BaseHTTPRequestHandler):
                                           + t["folder"]).lower()
                                     for w in words)]
                 heard = listened_snapshot()
+                info = trackinfo_snapshot()
+                with positions_lock:
+                    resume = dict(positions)
                 out = [{"id": t["id"], "title": t["title"],
                         "artist": t.get("artist", ""),
                         "album": t.get("album", ""),
@@ -421,7 +425,11 @@ class Handler(BaseHTTPRequestHandler):
                         "added": t.get("added", 0),
                         "dir": os.path.dirname(t["path"]),
                         "folder": t["folder"],
-                        "listened": heard.get(t["id"], 0)} for t in items[:3000]]
+                        "listened": heard.get(t["id"], 0),
+                        "resume": int(resume.get(t["id"], 0)),
+                        "dur": int(info.get(t["id"], {}).get("dur", 0)),
+                        "seen": info.get(t["id"], {}).get("seen", 0)}
+                       for t in items[:3000]]
                 total = len(items)
             self.send_json({"tracks": out, "total": total})
         elif path.startswith("/api/status"):
