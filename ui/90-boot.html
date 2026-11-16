@@ -1,6 +1,7 @@
 /* ---------------- status ---------------- */
 function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.state;
-  durSec=parseTime(A.status.duration); const np=parseTime(A.status.position);
+  durSec=parseTime(A.status.duration); const exact=typeof A.status.pos==="number" && isFinite(A.status.pos);
+  const np=exact ? A.status.pos : parseTime(A.status.position);
   const wasPlaying=playing;
   playing=(st==="PLAYING");
   // Feed the reading to the clock fit rather than easing posSec toward it: the value
@@ -8,7 +9,7 @@ function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.sta
   if(!playing){ clockReset(); posSec=np; }                        // paused/stopped: the reading IS the position
   else{
     if(!wasPlaying) clockReset();                                 // resume invalidates the previous fit
-    if(tSend!=null) clockObserve(np,tSend,tRecv);
+    if(tSend!=null) clockObserve(np,tSend,tRecv,exact);
     if(clkOff==null) posSec=np;                                   // until the first fix lands
   } if("mediaSession" in navigator){ try{ navigator.mediaSession.playbackState=playing?"playing":"paused"; if(durSec>0) navigator.mediaSession.setPositionState({duration:durSec,position:Math.min(posSec,durSec),playbackRate:1}); }catch(e){} }
   const pp=playing?'<path d="M7 5h3v14H7zM14 5h3v14h-3z"/>':'<path d="M8 5v14l11-7z"/>';

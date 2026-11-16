@@ -133,9 +133,13 @@ function energyAt(sec){ if(!analysis) return null; const st=analysis.step||0.1, 
 const CLK_DRIFT_PPM=250e-6;   // allowance for speaker-vs-browser crystal drift
 let clkLo=0, clkHi=0, clkHave=false, clkOff=null, clkLastObs=0;
 function clockReset(){ clkHave=false; clkOff=null; }
-function clockObserve(P,tSend,tRecv){
+// exact: P is a sub-second reading already moved to "now" by the engine (Cast's `pos`),
+// so it pins the offset to ±(latency + 50 ms) instead of a whole-second window. A Cast
+// reading can be up to a second old in the engine, which broke the [P, P+1) window and
+// let the clock (and the set video's lip sync) wander.
+function clockObserve(P,tSend,tRecv,exact){
   const tMid=(tSend+tRecv)/2, halfLat=Math.max(0,(tRecv-tSend)/2);
-  const lo=P-tMid-halfLat, hi=P+1-tMid+halfLat;
+  const lo=exact ? P-tMid-halfLat-0.05 : P-tMid-halfLat, hi=exact ? P-tMid+halfLat+0.05 : P+1-tMid+halfLat;
   if(!clkHave){ clkLo=lo; clkHi=hi; clkHave=true; }
   else{
     const slack=CLK_DRIFT_PPM*Math.max(0,tMid-clkLastObs);

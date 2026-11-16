@@ -623,6 +623,32 @@ class DraaiTests(unittest.TestCase):
             {"type": "MEDIA_STATUS", "status": [{"playerState": "IDLE", "idleReason": "FINISHED"}]})})
         self.assertEqual(fired, [1])
 
+    def test_cast_status_exact_position_extrapolated(self):
+        # Cast reports a float currentTime about once a second; the engine must hand the
+        # UI that precise value moved forward to "now", not a stale whole second.
+        class MockSock:
+            def sendall(self, b): pass
+            def close(self): pass
+        sess = sp.CastSession("1.2.3.7", sock_factory=lambda ip, port: MockSock(), autostart=False)
+        clock = [1000.0]
+        orig = draai.cast.time.monotonic
+        draai.cast.time.monotonic = lambda: clock[0]
+        try:
+            sess._handle({"namespace": sp.NS_MED, "payload": json.dumps({"type": "MEDIA_STATUS",
+                "status": [{"playerState": "PLAYING", "currentTime": 12.4, "media": {"duration": 200.0}}]})})
+            sp.cast_sessions["1.2.3.7"] = sess
+            clock[0] += 0.85
+            st = sp.cast_get_status({"ip": "1.2.3.7"})
+            self.assertAlmostEqual(st["pos"], 13.25, places=3)
+            self.assertEqual(st["position"], "0:00:13")
+            sess._handle({"namespace": sp.NS_MED, "payload": json.dumps({"type": "MEDIA_STATUS",
+                "status": [{"playerState": "PAUSED", "currentTime": 20.5}]})})
+            clock[0] += 5
+            self.assertAlmostEqual(sp.cast_get_status({"ip": "1.2.3.7"})["pos"], 20.5, places=3)
+        finally:
+            draai.cast.time.monotonic = orig
+            sp.cast_sessions.pop("1.2.3.7", None)
+
     def test_backend_field_and_merge(self):
         orig = (draai.backends.ssdp_discover, draai.backends.get_zone_groups, draai.backends.cast_discover)
         try:

@@ -153,6 +153,8 @@ heartbeat `PING` only every 5th tick (`n % 5 == 0`). Each `GET_STATUS` reply com
 between real state transitions — this loop is what makes the Cast playhead advance visibly in
 the UI, exactly like Sonos's own periodic `GetPositionInfo` polling does for that backend.
 
+The same branch also keeps `self._pos = (float currentTime, monotonic arrival time, playing)`. `cast_get_status` uses it to add `pos` — the exact position in seconds, moved forward to the moment of the request while playing — and refreshes `position` from it. The UI clock fit (`clockObserve`, exact mode) pins its offset with `pos` to about ±(latency + 50 ms) instead of a whole-second window. Without it the cached whole-second reading, up to a second old, broke the fit's `[P, P+1)` assumption and the set video's lip sync wandered over a long set. Sonos has no `pos` and keeps the whole-second fit.
+
 ### `mediaSessionId`: required on PAUSE/STOP/SEEK
 
 `MEDIA_STATUS` events carry a `mediaSessionId` identifying the currently loaded media item;

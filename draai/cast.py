@@ -236,6 +236,7 @@ class CastSession:
         self._media_session_id = None
         self._req = 0
         self._advance_cb = None      # called when a track finishes (queue auto-advance)
+        self._pos = None             # (currentTime float, monotonic time it arrived, playing)
         self._running = False
         self.status = {"state": "STOPPED", "title": "", "position": "0:00:00",
                        "duration": "0:00:00", "volume": 30, "id": None}
@@ -313,6 +314,10 @@ class CastSession:
                 ct = stt.get("currentTime")
                 if ct is not None:
                     self.status["position"] = sec_to_hms(ct)
+                    try:
+                        self._pos = (float(ct), time.monotonic(), ps == "PLAYING")
+                    except (TypeError, ValueError):
+                        pass
                 dur = stt.get("media", {}).get("duration")
                 if dur:
                     self.status["duration"] = sec_to_hms(dur)
@@ -558,13 +563,21 @@ def cast_get_status(spk):
     cur_id = q["ids"][q["idx"]] if q["ids"] and 0 <= q["idx"] < len(q["ids"]) else None
     t = tracks_by_id.get(cur_id) if cur_id else None
     st = sess.status if sess else {}
-    return {"state": st.get("state", "STOPPED"),
+    out = {"state": st.get("state", "STOPPED"),
             "title": (t["title"] if t else ""),
             "position": st.get("position", "0:00:00"),
             "duration": st.get("duration", "0:00:00"),
             "volume": st.get("volume"),
             "track_no": (q["idx"] + 1) if q["ids"] else None,
             "track_id": cur_id}
+    # Exact position for the UI clock (video lip sync): Cast's float currentTime moved
+    # forward to now. "position" stays whole seconds for everything else.
+    p = getattr(sess, "_pos", None) if sess else None
+    if p:
+        pos = p[0] + (max(0.0, time.monotonic() - p[1]) if p[2] and out["state"] == "PLAYING" else 0.0)
+        out["pos"] = round(pos, 3)
+        out["position"] = sec_to_hms(pos)
+    return out
 
 
 def cast_cmd(spk, action, value=None):
