@@ -21,6 +21,7 @@ from draai.playlists import delete_playlist, list_playlists, load_playlist, save
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
 from draai.listening import listened_snapshot, status_and_observe, trackinfo_snapshot
+from draai.deletion import MAX_IDS as MAX_DELETE_IDS, delete_allowed, delete_tracks
 from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms,
     group_join, group_leave, play_tracks, queue_jump, queue_move,
     queue_remove, refresh_speakers, seek_to, set_eq, set_room_volume, set_shuffle,
@@ -587,6 +588,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == "/api/delete":
+            # permanent delete: loopback + Host/Origin/Content-Type checked
+            # before the body is even read (see deletion.delete_allowed)
+            err = delete_allowed(self.client_address[0], self.headers, state.server_port)
+            if err:
+                self.close_connection = True
+                self.send_json({"error": err}, 403)
+                return
         body = self.read_json()
         try:
             if path == "/api/rescan_speakers":
@@ -704,6 +713,16 @@ class Handler(BaseHTTPRequestHandler):
                         ui[k] = v
                 save_config()
                 self.send_json(ui)
+            elif path == "/api/delete":
+                ids = body.get("ids")
+                if not isinstance(ids, list) or not ids:
+                    self.send_json({"error": "Pick at least one track to delete."}, 400)
+                    return
+                if len(ids) > MAX_DELETE_IDS:
+                    self.send_json({"error": "That's too many tracks at once — "
+                                    "delete at most %d at a time." % MAX_DELETE_IDS}, 400)
+                    return
+                self.send_json(delete_tracks(ids))
             elif path == "/api/reveal":
                 reveal_in_finder(body.get("id") or "")
                 self.send_json({"ok": True})

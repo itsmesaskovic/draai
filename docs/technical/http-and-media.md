@@ -122,6 +122,7 @@ the `try/except` described above:
 | `/api/playlist_delete` | 600 | Delete a saved playlist |
 | `/api/prefs` | 603 | POST — merge/save UI prefs (`null` value deletes a key) |
 | `/api/reveal` | 612 | Reveal a library file in Finder (path-guarded to library roots) |
+| `/api/delete` | — | **Permanently** delete library files: body `{"ids": [...]}` (1-500), returns `{"deleted": n, "failed": [{id, title, error}]}`. Loopback-only: `deletion.delete_allowed` checks the peer IP, `Host`, `Origin` and `Content-Type` *before* the body is read and answers 403 otherwise. Each id is refused if unknown, currently playing, or its realpath is outside the configured folders. See `security-and-privacy.md` |
 | `/api/eq` | 615 | Set bass/treble/loudness on a speaker |
 | `/api/group` | 623 | Join one speaker into another's group |
 | `/api/ungroup` | 627 | Remove a speaker from its group |

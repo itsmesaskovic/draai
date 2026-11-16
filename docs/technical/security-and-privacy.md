@@ -21,10 +21,12 @@ from quietly breaking any of it.
 - `draai/backends.py` — Sonos discovery (SSDP) and control (SOAP over HTTP)
 - `draai/cast.py` — Google Cast discovery (mDNS) and control (CASTV2 over TLS)
 - `draai/media.py` — a UDP "which interface am I on" probe
+- `draai/deletion.py` — the guard and path checks on `POST /api/delete`
 - `draai/__main__.py` — the listening socket bind
 - `ui/` — the served interface (assembled by `draai/ui.py`)
 - `tests/test_draai.py` — `test_engine_imports_only_stdlib`,
-  `test_ui_loads_nothing_from_the_internet`
+  `test_ui_loads_nothing_from_the_internet`, `test_delete_guard_rejects`,
+  `test_delete_refuses_outside_folders`
 - `.github/workflows/tests.yml` — runs the suite on every push and PR
 
 ## The guarantees
@@ -91,6 +93,31 @@ checkpoint removes the question either way, and is what the README recommends.
 Neither tool changes the guarantee for a default install: **with nothing
 optional installed, no DRAAI process ever contacts the internet.**
 
+**Permanent delete is local-only.** `POST /api/delete` removes music files
+from disk for good — there is no Trash. It is the one endpoint that is *not*
+open to the LAN: `deletion.delete_allowed()` runs before the request body is
+even read, and every check must hold or the engine answers 403 with
+"Deleting only works in DRAAI on this Mac.":
+
+- the TCP peer is loopback (`127.0.0.1`, `::1` or `::ffff:127.0.0.1`), so the
+  phone remote and anyone else on the LAN can't reach it;
+- the `Host` header names `localhost`, `127.0.0.1` or `::1` (port stripped),
+  which defeats DNS rebinding — a rebound hostname still sends its own `Host`;
+- the `Origin` header, when present, is exactly `http://localhost:<port>`,
+  `http://127.0.0.1:<port>` or `http://[::1]:<port>`, so another web page open
+  in your browser can't fire a cross-site delete;
+- `Content-Type` starts with `application/json`, which a plain HTML form or a
+  "simple" cross-origin `fetch` can't send without a CORS preflight (and the
+  engine answers no preflight).
+
+Past the guard, `deletion.delete_tracks()` re-checks each id: it must still be
+a library track, it must not be `PLAYING`/`TRANSITIONING` on any speaker
+(asked fresh, once per request), and `os.path.realpath()` of its file must lie
+inside the realpath of one of your configured music folders — a symlink in the
+library that points elsewhere is refused, never followed. Only then is the
+file removed, along with its resume position, time listened, track info and
+cached analysis. At most 500 ids per request.
+
 ## Threat model
 
 **What this design defends against:** your listening habits, library contents,
@@ -108,7 +135,8 @@ consequences of the "trusted home LAN" model:
 
 - **No authentication on the API, the phone remote, or `/media`.** Anyone who
   can reach the engine on your LAN can control playback, browse your library,
-  and fetch your files. This is what makes the QR remote frictionless; it also
+  and fetch your files (but not delete them — `/api/delete` is loopback-only,
+  see above). This is what makes the QR remote frictionless; it also
   means the trust boundary is your network, not a login.
 - **The server binds `0.0.0.0`** (`__main__.py:96`) — all interfaces. It has to:
   Sonos and Cast devices fetch the media *from* your Mac, so the socket must be
@@ -129,17 +157,21 @@ default. Raise an issue if you want it.
 
 ## How the invariants are guarded (CI)
 
-The two properties most easily broken by a well-meaning future change — "no pip
-dependency" and "the UI never phones home" — are enforced by tests, not just by
-convention in `CLAUDE.md`:
+The properties most easily broken by a well-meaning future change — "no pip
+dependency", "the UI never phones home" and "only this Mac can delete files" —
+are enforced by tests, not just by convention in `CLAUDE.md`:
 
 - **`test_engine_imports_only_stdlib`** — parses every `draai/*.py`, collects
   its imports, and fails if any resolves outside the standard library. Adding a
   third-party package turns the suite red.
 - **`test_ui_loads_nothing_from_the_internet`** — assembles the UI and asserts
   no external asset references and only local `fetch()` targets.
+- **`test_delete_guard_rejects`** / **`test_delete_refuses_outside_folders`** —
+  a foreign `Origin`, a foreign `Host`, a non-JSON `Content-Type` or a non-loopback
+  peer gets a 403 and the file survives; a library symlink pointing outside
+  the music folders is refused and its target survives.
 
-Both run in `.github/workflows/tests.yml` on every push and PR, so a regression
+All of them run in `.github/workflows/tests.yml` on every push and PR, so a regression
 is caught before it can ship in a `draai.pyz`.
 
 ## Verify it yourself
@@ -162,4 +194,4 @@ You don't have to take this doc's word for it:
 - [architecture.md](architecture.md) — storage paths, threading, the bind, `_load_ui`
 - [http-and-media.md](http-and-media.md) — the `/api` surface, `/media` Range serving, why HTTP
 - [google-cast.md](google-cast.md) — the TLS CASTV2 transport
-- `tests/test_draai.py` — the two guard tests above
+- `tests/test_draai.py` — the guard tests above

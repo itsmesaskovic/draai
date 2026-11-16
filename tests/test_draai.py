@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -1090,6 +1091,156 @@ class DraaiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
+
+    # -- permanent delete (POST /api/delete) ------------------------------------------
+
+    def _delete_env(self):
+        """Two scanned dummy sets, a live server, analysis + saves redirected."""
+        import draai.deletion
+        L = self._listen_reset()
+        make_mp3(os.path.join(self.tmp, "keep.mp3"), "Keep-Set", "K-DJ")
+        make_mp3(os.path.join(self.tmp, "gone.mp3"), "Gone-Set", "G-DJ")
+        sp.scan_all()
+        ids = {t["title"]: t["id"] for t in sp.tracks}
+        old = (draai.analysis.ANALYSIS_DIR, draai.backends.save_positions_soon,
+               draai.deletion.playing_track_ids, list(sp.speakers))
+        draai.analysis.ANALYSIS_DIR = os.path.join(self.tmp, "analysis")
+        draai.backends.save_positions_soon = lambda: None    # never write the real positions.json
+        sp.speakers[:] = []
+
+        def restore():
+            (draai.analysis.ANALYSIS_DIR, draai.backends.save_positions_soon,
+             draai.deletion.playing_track_ids, spk) = old
+            sp.speakers[:] = spk
+        self.addCleanup(restore)
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        old_port = draai.state.server_port
+        draai.state.server_port = port                  # as __main__ does after binding
+        self.addCleanup(setattr, draai.state, "server_port", old_port)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)             # cleanups run LIFO: shutdown first
+        self.addCleanup(httpd.shutdown)
+        return L, ids, port
+
+    def _post_delete(self, port, ids, headers):
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/api/delete" % port,
+            data=json.dumps({"ids": ids}).encode("utf-8"), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            with e:
+                return e.code, json.load(e)
+
+    def _good_headers(self, port):
+        return {"Content-Type": "application/json",
+                "Origin": "http://127.0.0.1:%d" % port}
+
+    def test_delete_guard_rejects(self):
+        import draai.deletion
+        _, ids, port = self._delete_env()
+        victim = os.path.join(self.tmp, "gone.mp3")
+        bad = [
+            {"Content-Type": "application/json", "Origin": "http://evil.test"},
+            {"Content-Type": "application/json", "Host": "evil.test:%d" % port},
+            {"Content-Type": "text/plain", "Origin": "http://127.0.0.1:%d" % port},
+        ]
+        for headers in bad:
+            code, body = self._post_delete(port, [ids["Gone-Set"]], headers)
+            self.assertEqual(code, 403, headers)
+            self.assertEqual(body["error"], "Deleting only works in DRAAI on this Mac.")
+            self.assertTrue(os.path.exists(victim), headers)
+            self.assertIn(ids["Gone-Set"], sp.tracks_by_id)
+        good = {"Host": "127.0.0.1:%d" % port, **self._good_headers(port)}
+        self.assertIsNone(draai.deletion.delete_allowed("127.0.0.1", good, port))
+        self.assertEqual(draai.deletion.delete_allowed("192.168.1.9", good, port),
+                         "Deleting only works in DRAAI on this Mac.")
+        for host in ("localhost:%d" % port, "[::1]:%d" % port):
+            self.assertIsNone(draai.deletion.delete_allowed(
+                "::1", dict(good, Host=host, Origin="http://[::1]:%d" % port), port))
+
+    def test_delete_removes_file_and_state(self):
+        L, ids, port = self._delete_env()
+        gone, keep = ids["Gone-Set"], ids["Keep-Set"]
+        with sp.positions_lock:
+            sp.positions[gone] = 1200
+            sp.positions[keep] = 900
+        L.credit(gone, 600)
+        L.credit(keep, 300)
+        L.note_track(gone, 3600, 1700000000.0)
+        L.note_track(keep, 3600, 1700000000.0)
+        os.makedirs(draai.analysis.ANALYSIS_DIR)
+        for tid in (gone, keep):
+            with open(os.path.join(draai.analysis.ANALYSIS_DIR, tid + ".json"), "w") as f:
+                f.write("{}")
+        code, body = self._post_delete(port, [gone], self._good_headers(port))
+        self.assertEqual((code, body), (200, {"deleted": 1, "failed": []}))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "gone.mp3")))
+        self.assertNotIn(gone, sp.tracks_by_id)
+        self.assertNotIn(gone, [t["id"] for t in sp.tracks])
+        self.assertNotIn(gone, sp.positions)
+        self.assertNotIn(gone, sp.listening)
+        self.assertNotIn(gone, sp.trackinfo)
+        self.assertFalse(os.path.exists(os.path.join(draai.analysis.ANALYSIS_DIR, gone + ".json")))
+        # the other set is untouched
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "keep.mp3")))
+        self.assertIn(keep, sp.tracks_by_id)
+        self.assertEqual((sp.positions[keep], sp.listening[keep]), (900, 300))
+        self.assertIn(keep, sp.trackinfo)
+        self.assertTrue(os.path.exists(os.path.join(draai.analysis.ANALYSIS_DIR, keep + ".json")))
+        # unknown id: refused, nothing else happens
+        code, body = self._post_delete(port, ["0" * 16], self._good_headers(port))
+        self.assertEqual(body["deleted"], 0)
+        self.assertEqual(body["failed"][0]["error"], "That track is no longer in your library.")
+
+    def test_playing_track_ids(self):
+        import draai.deletion as D
+        old = (D.status_and_observe, list(sp.speakers))
+        self.addCleanup(lambda: (setattr(D, "status_and_observe", old[0]),
+                                 sp.speakers.__setitem__(slice(None), old[1])))
+        asked = []
+
+        def fake(spk):
+            asked.append(spk["uuid"])
+            if spk["uuid"] == "boom":
+                raise OSError("unreachable")
+            return {"P": {"state": "PLAYING", "track_id": "a" * 16},
+                    "T": {"state": "TRANSITIONING", "track_id": "b" * 16},
+                    "Z": {"state": "PAUSED_PLAYBACK", "track_id": "c" * 16}}[spk["uuid"]]
+        D.status_and_observe = fake
+        sp.speakers[:] = [{"uuid": "P", "ip": "1.1.1.1"}, {"uuid": "T", "ip": "1.1.1.2"},
+                          {"uuid": "Z", "ip": "1.1.1.3"}, {"uuid": "boom", "ip": "1.1.1.4"},
+                          {"uuid": "C", "ip": "1.1.1.5", "backend": "cast"}]
+        self.assertEqual(D.playing_track_ids(), {"a" * 16, "b" * 16})
+        self.assertNotIn("C", asked)           # Cast without a live session: skipped
+
+    def test_delete_refuses_playing_track(self):
+        import draai.deletion
+        _, ids, port = self._delete_env()
+        id1 = ids["Gone-Set"]
+        draai.deletion.playing_track_ids = lambda: {id1}
+        code, body = self._post_delete(port, [id1], self._good_headers(port))
+        self.assertEqual(body["deleted"], 0)
+        self.assertEqual(body["failed"][0]["id"], id1)
+        self.assertIn("playing right now", body["failed"][0]["error"])
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "gone.mp3")))
+        self.assertIn(id1, sp.tracks_by_id)
+
+    def test_delete_refuses_outside_folders(self):
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside, True)
+        target = os.path.join(outside, "elsewhere.mp3")
+        make_mp3(target, "Outside-Set", "O-DJ")
+        os.symlink(target, os.path.join(self.tmp, "link.mp3"))
+        _, ids, port = self._delete_env()
+        tid = ids["Outside-Set"]
+        code, body = self._post_delete(port, [tid], self._good_headers(port))
+        self.assertEqual(body["deleted"], 0)
+        self.assertIn("outside your music folders", body["failed"][0]["error"])
+        self.assertTrue(os.path.exists(target))
+        self.assertIn(tid, sp.tracks_by_id)
 
     def test_engine_imports_only_stdlib(self):
         """Supply-chain guard: the engine must import only the Python standard
