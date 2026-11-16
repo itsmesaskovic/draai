@@ -21,7 +21,7 @@ function npPlayable(list){
   return (list||[]).filter(s=>s && s.url && s.height>0 && npCanPlay(s))
     .sort((a,b)=>(b.height-a.height) || (npCodecRank(a.vcodec)-npCodecRank(b.vcodec))); }
 function npVideoShow(on){ NPV.shown=on; $("#np").classList.toggle("np-video",on);
-  if(on) requestAnimationFrame(()=>sizeCanvas(npCv)); }   // the waveform column changed width
+  requestAnimationFrame(()=>{ sizeCanvas(npCv); sizeCanvas(npSpecC); }); }   // the waveform column changed width
 function npVideoUnload(){ const v=npVideoEl();
   NPV.gen++; NPV.id=null; NPV.streams=[]; NPV.cur=-1; NPV.errors=0;
   if(document.fullscreenElement===v){ try{ document.exitFullscreen(); }catch(e){} }
@@ -113,3 +113,17 @@ function npVideoFullscreen(){ const v=npVideoEl();
   v.addEventListener("click",npVideoFullscreen);
   $("#npVidFs").addEventListener("click",e=>{ e.stopPropagation(); npVideoFullscreen(); });
 })();
+
+/* ---- Waveform / Spectrum beside the set video ----
+   A.npViz ("wave" | "spec", prefs key npViz) picks what sits under the title in the
+   np-video layout. Only there: without a video #np always shows the waveform, and the
+   panel spectrum is drawn only while it is actually on screen (see tick()). */
+let npSpecC;
+function npVizSpecShown(){ return A.npViz==="spec" && NPV.shown; }
+function applyNpViz(){
+  $("#np").classList.toggle("npviz-spec",A.npViz==="spec");
+  $$(".npvsb").forEach(b=>{ const on=b.dataset.npviz===A.npViz; b.classList.toggle("on",on); b.setAttribute("aria-pressed",String(on)); });
+  requestAnimationFrame(()=>{ if(npSpecC) sizeCanvas(npSpecC); if(npCv) sizeCanvas(npCv); }); }
+$$(".npvsb").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation();
+  if(A.npViz===b.dataset.npviz) return;
+  A.npViz=b.dataset.npviz; applyNpViz(); savePrefs(); }));

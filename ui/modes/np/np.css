@@ -17,3 +17,13 @@
   .np.np-video .npmeta{align-items:center;max-width:none}
   .np.np-video .npctrls,.np.np-video .npextra{justify-content:center}
 }
+/* Waveform / Spectrum switch (A.npViz) — only in the np-video layout */
+.npvsw,.npspec{display:none}
+.np.np-video .npvsw{display:inline-flex;gap:3px;margin-bottom:14px;padding:3px;border-radius:10px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+.npvsb{padding:6px 13px;border-radius:7px;font-size:12px;font-weight:550;color:var(--dim);transition:.15s}
+.npvsb:hover{color:#f4f4f7}
+.npvsb.on{background:rgba(255,255,255,.12);color:#f4f4f7}
+.np.np-video.npviz-spec #npWave{display:none}
+.np.np-video.npviz-spec .npspec{display:block;height:152px}
+.npspec canvas{width:100%;height:100%;display:block}

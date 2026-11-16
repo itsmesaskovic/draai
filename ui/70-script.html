@@ -16,6 +16,7 @@ const A={
   sel:new Set(), collapsed:new Set(), selMode:false, group:"none", sort:"title", dir:1, playlists:[], theme:"auto",
   status:{state:"STOPPED",title:"",position:"0:00:00",duration:"0:00:00",volume:30,track_no:0},
   queue:[], queueIds:[], shuffle:false,
+  npViz:"wave",
   curId:null, eq:{bass:0,treble:0,loudness:false}, eqOK:true, sleepMin:0, accessUrl:"",
 };
 
@@ -181,7 +182,8 @@ function tick(t){ const dt=Math.min(.05,(t-last)/1000); last=t;
   // waveform underneath them is work nobody can see.
   const fsOpen=FS_IDS.some(x=>$("#"+x).classList.contains("open"));
   if(!fsOpen) drawWave(dockCv,prog);
-  if($("#np").classList.contains("open")) drawWave(npCv,prog);
+  if($("#np").classList.contains("open")){
+    if(npVizSpecShown()) drawSpecInto(npSpecC,dt,t,prog); else drawWave(npCv,prog); }
   npVideoSync();
   if($("#amp").classList.contains("open")) drawAmp(dt,t,prog);
   if($("#spec").classList.contains("open")) drawSpec(dt,t,prog);

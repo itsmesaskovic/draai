@@ -418,7 +418,7 @@ function wire(){
   $("#driveCarBtn").addEventListener("click",e=>{ e.stopPropagation(); $("#carPick").classList.toggle("open"); });
   document.addEventListener("click",e=>{ const p=$("#carPick");
     if(p && p.classList.contains("open") && !p.contains(e.target)) p.classList.remove("open"); });
-  addEventListener("resize",()=>{ sizeCanvas(dockCv); if($("#np").classList.contains("open"))sizeCanvas(npCv);
+  addEventListener("resize",()=>{ sizeCanvas(dockCv); if($("#np").classList.contains("open")){ sizeCanvas(npCv); sizeCanvas(npSpecC); }
     if($("#amp").classList.contains("open")){ sizeCv(vuLc); sizeCv(vuRc); sizeCanvas(ampCv); }
     if($("#spec").classList.contains("open")){ sizeCanvas(specC); sizeCanvas(specW2); }
     if($("#drive").classList.contains("open")){ sizeDriveCanvas(); } });
@@ -528,7 +528,7 @@ const Demo=(()=>{
 
 /* ============================================================ boot */
 async function boot(){
-  dockCv=mkCanvas("#dockWave"); npCv=mkCanvas("#npWave"); sizeCanvas(dockCv);
+  dockCv=mkCanvas("#dockWave"); npCv=mkCanvas("#npWave"); npSpecC=mkCanvas("#npSpec"); sizeCanvas(dockCv);
   ampCv=mkCanvas("#ampWave"); vuLc=mkCv("vuL"); vuRc=mkCv("vuR");
   specC=mkCanvas(".specstage"); specW2=mkCanvas("#specWave");
   driveC=mkCanvas(".drivestage");
@@ -826,7 +826,7 @@ $("#themeBtn").addEventListener("click",()=>{
 let prefsTimer=null;
 function savePrefs(){
   clearTimeout(prefsTimer);
-  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
+  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,npViz:A.npViz,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
 }
 async function loadPrefs(){
   try{ const p=await api("/api/prefs");
@@ -835,9 +835,10 @@ async function loadPrefs(){
     if(p.sort)A.sort=p.sort;
     if(p.dir)A.dir=p.dir;
     if(p.driveCar)A.driveCar=p.driveCar;
+    if(p.npViz==="wave"||p.npViz==="spec")A.npViz=p.npViz;
     if(Array.isArray(p.collapsed))A.collapsed=new Set(p.collapsed);
   }catch(e){}
-  applyTheme();
+  applyTheme(); applyNpViz();
 }
 
 /* ---------------- vinyl deck ---------------- */
