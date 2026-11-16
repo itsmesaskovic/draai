@@ -11,7 +11,7 @@ import time
 from draai.constants import AUDIO_EXTS
 from draai.state import tracks_by_id
 from draai.media import media_url
-from draai.util import sec_to_hms
+from draai.util import sec_to_hms, local_ipv4_addrs
 
 
 def _cast_varint(n):
@@ -146,12 +146,37 @@ def cast_discover(timeout=4.0):
         except Exception:
             pass
         s.bind(("", 5353))
-        mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.251"),
-                           socket.inet_aton("0.0.0.0"))
-        s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        # Join + query on every interface, not just the default multicast
+        # route (a VPN often owns that and swallows the query).
+        ifaces = local_ipv4_addrs() or ["0.0.0.0"]
+        joined = []
+        for ifip in ifaces:
+            mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.251"),
+                               socket.inet_aton(ifip))
+            try:
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                joined.append(ifip)
+            except OSError:
+                pass
+        if not joined:
+            mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.251"),
+                               socket.inet_aton("0.0.0.0"))
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            joined = ["0.0.0.0"]
         s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
         pkt = _mdns_query_packet()
-        s.sendto(pkt, ("224.0.0.251", 5353))
+
+        def send_query():
+            for ifip in joined:
+                try:
+                    if ifip != "0.0.0.0":
+                        s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                                     socket.inet_aton(ifip))
+                    s.sendto(pkt, ("224.0.0.251", 5353))
+                except OSError:
+                    pass
+
+        send_query()
         rec = {"ptr": {}, "srv": {}, "a": {}, "txt": {}}
         s.settimeout(0.6)
         end = time.time() + timeout
@@ -159,10 +184,7 @@ def cast_discover(timeout=4.0):
             try:
                 data, _ = s.recvfrom(9000)
             except socket.timeout:
-                try:
-                    s.sendto(pkt, ("224.0.0.251", 5353))
-                except Exception:
-                    pass
+                send_query()
                 continue
             try:
                 _mdns_parse_packet(data, rec)

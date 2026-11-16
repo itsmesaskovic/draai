@@ -4,6 +4,7 @@ resume positions, and the room model."""
 import json
 import os
 import re
+import select
 import socket
 import struct
 import threading
@@ -18,7 +19,7 @@ from draai.state import (speakers, tracks, tracks_by_id, config, positions,
                          positions_lock, _positions_dirty, state_lock, enqueue_generation)
 from draai.constants import (AUDIO_EXTS, QUEUE_CAP, RESUME_MIN_TRACK, RESUME_MIN_POS,
                              POSITIONS_PATH, CONFIG_DIR)
-from draai.util import sec_to_hms, hms_to_sec
+from draai.util import sec_to_hms, hms_to_sec, local_ipv4_addrs
 from draai.media import media_url
 from draai.cast import (cast_play_tracks, cast_get_status, cast_set_volume,
                         cast_seek_to, cast_set_shuffle, cast_browse_queue,
@@ -43,30 +44,44 @@ def ssdp_discover(timeout=3.0):
         "", "",
     ]).encode()
     ips = set()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    # One socket per LAN interface: the default multicast route may point
+    # into a VPN tunnel, which never reaches speakers on the local Wi-Fi.
+    socks = []
+    for ifip in (local_ipv4_addrs() or [None]):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL,
+                            struct.pack("B", 2))
+            if ifip:
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                                socket.inet_aton(ifip))
+                sock.bind((ifip, 0))
+            sock.setblocking(False)
+            socks.append(sock)
+        except OSError:
+            sock.close()
     try:
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL,
-                        struct.pack("B", 2))
-        sock.settimeout(timeout)
         for _ in range(2):  # send twice; UDP is lossy
-            try:
-                sock.sendto(msg, SSDP_ADDR)
-            except OSError:
-                pass
+            for sock in socks:
+                try:
+                    sock.sendto(msg, SSDP_ADDR)
+                except OSError:
+                    pass
         deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                sock.settimeout(max(0.1, deadline - time.time()))
-                data, addr = sock.recvfrom(4096)
-            except socket.timeout:
-                break
-            except OSError:
-                break
-            text = data.decode("utf-8", "replace")
-            if "Sonos" in text or "ZonePlayer" in text.replace(" ", ""):
-                ips.add(addr[0])
+        while socks and time.time() < deadline:
+            ready, _, _ = select.select(socks, [], [],
+                                        max(0.05, deadline - time.time()))
+            for sock in ready:
+                try:
+                    data, addr = sock.recvfrom(4096)
+                except OSError:
+                    continue
+                text = data.decode("utf-8", "replace")
+                if "Sonos" in text or "ZonePlayer" in text.replace(" ", ""):
+                    ips.add(addr[0])
     finally:
-        sock.close()
+        for sock in socks:
+            sock.close()
     return ips
 
 

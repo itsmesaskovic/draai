@@ -556,6 +556,27 @@ class DraaiTests(unittest.TestCase):
         self.assertEqual(qtype, 12)
         self.assertEqual(qclass, 1)
 
+    def test_discovery_interfaces_skip_vpn_tunnels(self):
+        from draai.util import parse_ipv4_addrs
+        mac = ("lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384\n"
+               "\tinet 127.0.0.1 netmask 0xff000000\n"
+               "en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500\n"
+               "\tinet 192.168.178.155 netmask 0xffffff00 broadcast 192.168.178.255\n"
+               "ipsec0: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1280\n"
+               "\tinet 192.168.31.245 --> 192.168.31.245 netmask 0xffffff00\n"
+               "utun4: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1380\n"
+               "\tinet 10.8.0.2 --> 10.8.0.1 netmask 0xffffffff\n"
+               "en7: flags=8863<UP,BROADCAST,RUNNING,MULTICAST> mtu 1500\n"
+               "\tinet 169.254.3.4 netmask 0xffff0000\n")
+        self.assertEqual(parse_ipv4_addrs(mac), ["192.168.178.155"])
+        linux = ("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n"
+                 "    inet 127.0.0.1/8 scope host lo\n"
+                 "2: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+                 "    inet 192.168.1.20/24 brd 192.168.1.255 scope global wlan0\n"
+                 "5: tun0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500\n"
+                 "    inet 10.8.0.2/24 scope global tun0\n")
+        self.assertEqual(parse_ipv4_addrs(linux), ["192.168.1.20"])
+
     def test_castsession_handles_status_ping_finish(self):
         sent = []
         class MockSock:
