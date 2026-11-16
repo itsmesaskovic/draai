@@ -217,5 +217,5 @@ function openMode(id, sizers){
   npVideoUpdate();
   requestAnimationFrame(()=>{ (sizers||[]).forEach(s=>s()); });
 }
-function openNp(){ openMode("np",[()=>sizeCanvas(npCv)]); armIdle(); }
+function openNp(){ npVideoRetry(); openMode("np",[()=>sizeCanvas(npCv)]); armIdle(); }
 

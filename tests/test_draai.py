@@ -49,9 +49,10 @@ sp.ThreadingHTTPServer = http.server.ThreadingHTTPServer   # for the live-server
 # ----------------------------------------------------------------------------
 
 def make_mp3(path, title="Song", artist="Artist", album="Album",
-             art=b"\x89PNG\r\n\x1a\nFAKEPNGDATA", purl=None):
+             art=b"\x89PNG\r\n\x1a\nFAKEPNGDATA", purl=None, purl_utf8=False):
     """Minimal ID3v2.3 tag + dummy audio bytes. `purl` adds a yt-dlp style
-    TXXX:purl source-link frame (latin-1, after the cover, like yt-dlp)."""
+    TXXX:purl source-link frame (latin-1, after the cover, like yt-dlp;
+    `purl_utf8` writes it with encoding byte 0x03 instead)."""
     def frame(fid, body):
         return fid + struct.pack(">I", len(body)) + b"\x00\x00" + body
 
@@ -62,7 +63,10 @@ def make_mp3(path, title="Song", artist="Artist", album="Album",
     if art:
         frames += frame(b"APIC", b"\x03image/png\x00\x03\x00" + art)
     if purl is not None:
-        frames += frame(b"TXXX", b"\x00purl\x00" + purl.encode("latin-1"))
+        if purl_utf8:
+            frames += frame(b"TXXX", b"\x03purl\x00" + purl.encode("utf-8"))
+        else:
+            frames += frame(b"TXXX", b"\x00purl\x00" + purl.encode("latin-1"))
     size = len(frames)
     ss = bytes([(size >> 21) & 0x7F, (size >> 14) & 0x7F,
                 (size >> 7) & 0x7F, size & 0x7F])
@@ -1052,6 +1056,12 @@ class DraaiTests(unittest.TestCase):
         self.assertEqual(by["V-Set"]["source_url"], url)
         self.assertEqual(by["N-Set"]["source_url"], "")
 
+    def test_read_tags_source_url_utf8(self):
+        url = "https://www.youtube.com/watch?v=abc&t=\u00e9"
+        p = os.path.join(self.tmp, "u.mp3")
+        make_mp3(p, "U-Set", purl=url, purl_utf8=True)
+        self.assertEqual(sp.read_tags(p).get("source_url"), url)
+
     def test_source_url_rejects_non_http(self):
         for bad in ("javascript:x", "-oops"):
             p = os.path.join(self.tmp, "bad.mp3")
@@ -1083,7 +1093,7 @@ class DraaiTests(unittest.TestCase):
 
     # -- set video (yt-dlp stream resolver) ------------------------------------------
 
-    def _fake_ytdlp(self, expire=None, fail=False):
+    def _fake_ytdlp(self, expire=None, fail=False, info=None):
         """Write an executable stand-in for yt-dlp that prints fixed JSON and
         counts its invocations; point video.find_tool at it. Never the real one."""
         import time
@@ -1112,7 +1122,7 @@ class DraaiTests(unittest.TestCase):
             if fail:
                 f.write("sys.exit(1)\n")
             else:
-                f.write("print(%r)\n" % json.dumps({"formats": fmts}))
+                f.write("print(%r)\n" % json.dumps({"formats": fmts} if info is None else info))
         os.chmod(script, 0o755)
         video.find_tool = lambda name: script if name == "yt-dlp" else None
         self.addCleanup(setattr, video, "find_tool", draai.media.find_tool)
@@ -1179,6 +1189,21 @@ class DraaiTests(unittest.TestCase):
         self.assertEqual((str(cm.exception), cm.exception.status),
                          ("Couldn't load the video for this set.", 502))
         self.assertEqual(len(calls()), 1)
+
+    def test_video_malformed_ytdlp_output(self):
+        for info in ({"formats": 5},
+                     {"formats": [{"url": "https://cdn.example/n", "vcodec": "vp9",
+                                   "acodec": "none", "protocol": "https", "height": 720,
+                                   "fps": float("nan"), "ext": "webm"}]},
+                     {"formats": [{"url": "https://cdn.example/i", "vcodec": "vp9",
+                                   "acodec": "none", "protocol": "https", "height": 720,
+                                   "fps": float("inf"), "ext": "webm"}]}):
+            video, calls = self._fake_ytdlp(info=info)
+            self._video_track("v" * 16)
+            with self.assertRaises(video.VideoError) as cm:
+                video.video_streams("v" * 16)
+            self.assertEqual((str(cm.exception), cm.exception.status),
+                             ("Couldn't load the video for this set.", 502))
 
     def test_api_video_route(self):
         video, calls = self._fake_ytdlp()

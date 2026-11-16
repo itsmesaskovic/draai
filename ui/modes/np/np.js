@@ -2,9 +2,12 @@
    The playing set's real video, muted, in #np's left half, kept in sync with the
    speaker through the UI clock (posSec/playing). Streams come from /api/video at
    runtime (the engine asks the user's own yt-dlp); nothing is fetched while #np is
-   closed, in vinyl mode, or in the demo. Any failure quietly leaves the cover. */
+   closed, in vinyl mode, or in the demo. Any failure quietly leaves the cover; opening
+   the full-screen view again gives it one fresh try. maxH is a session-only height
+   ceiling (memory, never a pref): every step-down lowers it, so the next set starts
+   at a height this machine has already managed. */
 const NPV={ id:null, gen:0, streams:[], cur:-1, errors:0, failed:null, shown:false,
-  playT:0, winT:0, q:null, lastT:0, waiting:false, waits:0, bufT:0 };
+  playT:0, winT:0, q:null, lastT:0, waiting:false, waits:0, bufT:0, okT:0, maxH:Infinity };
 function npVideoEl(){ return $("#npVideo"); }
 function npVideoWanted(){
   if(DEMO || VINYL || A.curId==null || !$("#np").classList.contains("open")) return null;
@@ -29,7 +32,7 @@ function npVideoUnload(){ const v=npVideoEl();
   if(v.hasAttribute("src")){ v.removeAttribute("src"); try{ v.load(); }catch(e){} }
   if(NPV.shown) npVideoShow(false); }
 function npVideoSetSrc(i, keepShown){ const v=npVideoEl(), s=NPV.streams[i]; NPV.cur=i;
-  NPV.playT=0; NPV.winT=0; NPV.q=null; NPV.waiting=false; NPV.waits=0; NPV.bufT=0;
+  NPV.playT=0; NPV.winT=0; NPV.q=null; NPV.waiting=false; NPV.waits=0; NPV.bufT=0; NPV.okT=0;
   if(!keepShown && NPV.shown) npVideoShow(false);
   v.playbackRate=1; v.src=s.url; try{ v.load(); }catch(e){} }
 /* resolves to the playable streams (tallest first, maybe empty), null when the engine
@@ -41,7 +44,10 @@ async function npVideoFetch(id){ const g=NPV.gen;
 async function npVideoStart(id){
   const list=await npVideoFetch(id); if(list===undefined) return;
   if(!list || !list.length){ NPV.failed=id; npVideoUnload(); return; }   // no video: the cover stays
-  NPV.streams=list; npVideoSetSrc(0,false); }
+  let i=list.findIndex(s=>s.height<=NPV.maxH); if(i<0) i=list.length-1;   // tallest under the ceiling, else the lowest
+  NPV.streams=list; npVideoSetSrc(i,false); }
+/* an explicit open of the full-screen view: a set whose video failed gets one fresh try */
+function npVideoRetry(){ if(!$("#np").classList.contains("open")) NPV.failed=null; }
 function npVideoUpdate(){
   if(NPV.failed!=null && NPV.failed!==String(A.curId)) NPV.failed=null;   // a new track gets a fresh try
   const want=npVideoWanted();
@@ -62,6 +68,7 @@ async function npVideoError(){
   npVideoSetSrc(i,NPV.shown); }
 function npVideoStepDown(){ const h=NPV.streams[NPV.cur].height;
   const i=NPV.streams.findIndex(s=>s.height<h); if(i<0) return false;
+  NPV.maxH=Math.min(NPV.maxH,NPV.streams[i].height);             // remembered for the rest of the session
   npVideoSetSrc(i,true); return true; }
 function npVideoSync(){
   if(NPV.id==null) return;
@@ -87,6 +94,7 @@ function npVideoSync(){
   else v.playbackRate=1;
   // step-down: after 15 s of playback, judge every 10 s window on dropped frames and stalls
   if(v.paused || !NPV.shown) return;
+  if(!buffering && NPV.errors && (NPV.okT+=dt)>=60) NPV.errors=0;   // a minute of clean play forgives an old error
   NPV.playT+=dt; if(NPV.playT<15) return;
   const q=v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : {droppedVideoFrames:0,totalVideoFrames:0};
   if(!NPV.q){ NPV.q={drop:q.droppedVideoFrames,tot:q.totalVideoFrames}; NPV.winT=NPV.playT; NPV.waits=0; NPV.bufT=0; return; }

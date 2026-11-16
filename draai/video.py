@@ -80,9 +80,9 @@ def video_streams(tid):
             info = json.loads(proc.stdout.decode("utf-8", "replace"))
             if not isinstance(info, dict):
                 raise ValueError("unexpected yt-dlp output")
-        except (OSError, ValueError, subprocess.TimeoutExpired):
+            streams = _streams_from(info)   # odd shapes (formats: 5, NaN fps) raise here
+        except (OSError, ValueError, TypeError, OverflowError, subprocess.TimeoutExpired):
             raise VideoError("Couldn't load the video for this set.", 502)
-        streams = _streams_from(info)
         if not streams:
             raise VideoError("No video stream was found for this set.", 404)
         with _cache_lock:
