@@ -1,0 +1,19 @@
+/* ---------------- full-screen set video ----------------
+   #np gets .np-video only once the set's video has its first frame; until then
+   (and for every track without a video) #np is exactly the cover layout. */
+.npvid{display:none}
+.np.np-video .npbody{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:56px}
+.np.np-video .artstage{display:none}
+.np.np-video .npvid{display:block;position:relative;justify-self:stretch;width:100%;aspect-ratio:16/9;max-height:calc(100vh - 220px);
+  border-radius:22px;overflow:hidden;background:#000;box-shadow:0 50px 110px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.08)}
+.npvid video{display:block;width:100%;height:100%;object-fit:contain;cursor:zoom-in;background:#000}
+.npvid video:fullscreen{cursor:auto}
+.npvid .npvidfs{position:absolute;right:12px;bottom:12px;z-index:1;color:#f4f4f7;background:rgb(7 7 10 / .55);border-color:rgba(255,255,255,.14);transition:opacity .5s}
+.npvid .npvidfs:hover{background:rgb(7 7 10 / .8)}
+.np.idle .npvidfs{opacity:0;pointer-events:none}
+@media(max-width:900px){
+  .np.np-video .npbody{grid-template-columns:minmax(0,1fr);gap:22px;padding:0 26px 30px;align-content:center;text-align:center;overflow-y:auto}
+  .np.np-video .npvid{aspect-ratio:auto;height:min(46vh,calc((100vw - 52px)*9/16));max-height:none}
+  .np.np-video .npmeta{align-items:center;max-width:none}
+  .np.np-video .npctrls,.np.np-video .npextra{justify-content:center}
+}

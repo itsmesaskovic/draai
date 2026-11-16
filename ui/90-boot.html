@@ -59,6 +59,7 @@ function onTrackChange(id){ const t=A.tracks.find(x=>String(x.id)===String(id));
   // kinetic type swap
   const meta=$("#npMeta"); meta.classList.remove("swap"); void meta.offsetWidth; if(!REDUCE) meta.classList.add("swap");
   if(A.view!=="queue") renderContent();
+  npVideoUpdate();
 }
 function setSlider(el,v){ el.value=v; el.style.setProperty("--v",v+"%"); }
 
@@ -354,7 +355,7 @@ function wire(){
     cmd("seek",Math.round(posSec)); }));
   // fullscreen
   $("#expandBtn").addEventListener("click",openNp);
-  $("#npClose").addEventListener("click",()=>{ $("#np").classList.remove("open"); clearTimeout(idleT); });
+  $("#npClose").addEventListener("click",()=>{ $("#np").classList.remove("open"); clearTimeout(idleT); npVideoUpdate(); });
   $("#np").addEventListener("mousemove",armIdle); $("#np").addEventListener("touchstart",armIdle,{passive:true});
   // amplifier mode
   $("#ampBtn").addEventListener("click",openAmp);
@@ -406,7 +407,7 @@ function wire(){
   document.addEventListener("keydown",e=>{ if(e.target.tagName==="INPUT")return;
     if(e.code==="Space"){ e.preventDefault(); cmd(A.status.state==="PLAYING"?"pause":"resume"); }
     else if(e.key==="ArrowRight"&&e.shiftKey)cmd("next"); else if(e.key==="ArrowLeft"&&e.shiftKey)cmd("prev");
-    else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $("#spec").classList.remove("open"); $("#drive").classList.remove("open"); $$(".pop").forEach(p=>p.classList.remove("open")); }
+    else if(e.key==="Escape"){ $("#np").classList.remove("open"); closeAmp(); $("#spec").classList.remove("open"); $("#drive").classList.remove("open"); $$(".pop").forEach(p=>p.classList.remove("open")); npVideoUpdate(); }
     else if(e.key==="f"||e.key==="F"){ if($("#amp").classList.contains("open")||$("#spec").classList.contains("open")||$("#drive").classList.contains("open")){ openNp(); } else $("#expandBtn").click(); }
     else if(e.key==="a"||e.key==="A"){ if($("#amp").classList.contains("open")) closeAmp(); else openAmp(); }
     else if(e.key==="s"||e.key==="S"){ if($("#spec").classList.contains("open")) $("#spec").classList.remove("open"); else openSpec(); }
@@ -431,7 +432,7 @@ async function refreshState(){ const s=await api("/api/state"); A.speakers=s.spe
   if(!A.speaker && A.speakers.length){ A.speaker=A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers[0]; applyBackendUI(); }
   renderRooms(); }
 async function refreshTracks(){ await guard(async()=>{ const d=await api("/api/tracks?q="); A.tracks=d.tracks||[]; A.trackCount=d.total??A.tracks.length;
-  $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; renderContent(); }); loadMostPlayed(); }
+  $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; renderContent(); npVideoUpdate(); }); loadMostPlayed(); }
 
 /* ============================================================
    DEMO BACKEND — active only when no real /api responds.
@@ -844,6 +845,7 @@ let VINYL=false;
 function applyVinyl(){
   $("#vinylStage").classList.toggle("hidden",!VINYL);
   $("#npArtWrap").classList.toggle("hidden",VINYL);
+  npVideoUpdate();
 }
 $("#vinylBtn").addEventListener("click",()=>{ VINYL=!VINYL; applyVinyl(); });
 setInterval(()=>{

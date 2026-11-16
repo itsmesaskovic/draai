@@ -182,6 +182,7 @@ function tick(t){ const dt=Math.min(.05,(t-last)/1000); last=t;
   const fsOpen=FS_IDS.some(x=>$("#"+x).classList.contains("open"));
   if(!fsOpen) drawWave(dockCv,prog);
   if($("#np").classList.contains("open")) drawWave(npCv,prog);
+  npVideoSync();
   if($("#amp").classList.contains("open")) drawAmp(dt,t,prog);
   if($("#spec").classList.contains("open")) drawSpec(dt,t,prog);
   if($("#drive").classList.contains("open")) drawDrive(dt,t,prog);
@@ -211,6 +212,7 @@ const FS_IDS=["np","amp","spec","drive"];
 function openMode(id, sizers){
   FS_IDS.forEach(x=>$("#"+x).classList.remove("open"));
   $("#"+id).classList.add("open");
+  npVideoUpdate();
   requestAnimationFrame(()=>{ (sizers||[]).forEach(s=>s()); });
 }
 function openNp(){ openMode("np",[()=>sizeCanvas(npCv)]); armIdle(); }

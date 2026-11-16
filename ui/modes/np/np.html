@@ -10,6 +10,9 @@
     <button class="iconbtn" id="npClose"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"></path></svg></button>
   </div>
   <div class="npbody">
+    <div class="npvid" id="npVid"><video id="npVideo" muted playsinline preload="auto"></video>
+      <button class="iconbtn npvidfs" id="npVidFs" title="Full screen video"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg></button>
+    </div>
     <div class="artstage"><div class="halo"></div><div class="npart" id="npArtWrap"><img id="npArt" alt=""></div>
       <div class="vinylstage hidden" id="vinylStage">
         <div class="vdisc" id="disc">
@@ -23,7 +26,7 @@
       <div class="k">Now Playing</div>
       <h2><span class="kin" id="npTitle">Nothing playing</span></h2>
       <div class="art"><span class="kin" id="npArtist"></span></div>
-      <div class="npseek">
+      <div class="npseek" id="npViz">
         <div class="wave" id="npWave"><canvas></canvas></div>
         <div class="nprow"><span class="t mono" id="npPos">0:00</span><span class="t mono" id="npDur">0:00</span></div>
       </div>

@@ -31,6 +31,17 @@ Each mode is a directory under `ui/modes/` contributing three files, listed in `
 
 They share `openMode(id, sizers)` and the `FS_IDS` list in `ui/90-boot.html`; `Esc` closes whichever is open. `tick()` in `ui/70-script.html` only draws the mode that is currently open, and skips the dock waveform entirely while one is — the fullscreen modes are `position:fixed; inset:0` and cover it.
 
+### Set video in now playing (`ui/modes/np/np.js`, `np.css`)
+
+When the current track has `has_video` (from `/api/tracks`), `#np` shows the set's real video, muted, in sync with the speaker. The controller is the `NPV` state object plus two hooks:
+
+- `npVideoUpdate()` — called from `onTrackChange()`, `openMode()` (so any mode switch away from `#np` unloads), `#npClose`, `Esc`, `applyVinyl()` and `refreshTracks()`. Idempotent. Active only when `#np.open` AND `!VINYL` AND the current track has `has_video` AND not `DEMO`; otherwise it unloads (`pause()`, `removeAttribute("src")`, `load()`, exits fullscreen), so nothing streams in the background.
+- `npVideoSync()` — called every frame from `tick()`. Drift `d = video.currentTime - posSec`: `|d| > 2` s seeks, `0.15 < |d| <= 2` sets `playbackRate` 0.95/1.05, else 1. Paused speaker (`!playing`) pauses the video. It also unloads if `#np` was closed by a path that skipped the hook. Step-down: after 15 s of playback, every 10 s compares `getVideoPlaybackQuality()` deltas; > 10 % dropped switches to the next lower height and re-seeks to `posSec`.
+- Stream choice: `GET /api/video?id=` (see `http-and-media.md`), keep streams where `MediaSource.isTypeSupported('video/<webm|mp4>; codecs="<vcodec>"')` (or `canPlayType` without MediaSource), tallest first, ties AV1 > VP9 > H.264. A generation counter drops stale responses (track or view changed in flight).
+- Errors: the first `error` event re-fetches `/api/video` (stream links expire) and retries the same height; a second one, or an engine error/empty list, sets `NPV.failed` for that track and the cover stays — no toast, no retry loop (the engine does not cache failures). A new track clears it.
+- Layout: the `<video>` lives in `.npvid#npVid` as the first child of `.npbody`, hidden until `loadeddata`. Then `#np` gets `.np-video`: `.npbody` splits 50/50, `.artstage` is hidden, the video is letterboxed (`object-fit:contain`) in a rounded box with a full-screen button `#npVidFs`; clicking the video or the button calls `requestFullscreen()` on the video (native Esc returns). At <= 900 px wide the video stacks above the meta column. Without `.np-video` the view is exactly the cover layout. The right column's waveform block is `.npseek#npViz` (the place for a future Waveform/Spectrum switch). Palette pipeline is untouched (the cover image still feeds it).
+- The static page still contains no external URL; the video URL only ever comes from `/api/video` at runtime (`test_ui_loads_nothing_from_the_internet`).
+
 ### DRIVE
 
 An 80s arcade driving scene rendered into a 320x180 backing buffer and blitted, nearest-neighbour, onto a display canvas sized to an exact integer multiple of that buffer (`sizeDriveCanvas`) so the upscale lands on whole pixels. Everything on screen traces to a real signal — see `docs/technical/drive-and-cars.md` for the scene, the car sprite format, and how to author a new car.
@@ -80,7 +91,7 @@ Flow: `getArt()` (`player_ui.html:679-687`) loads the track art image, then:
 ### Fullscreen now-playing view
 
 - `#np` starts off-screen (`transform:translateY(101%)`) and slides in on `.open` (`player_ui.html:217-219`). Opened via the expand button (`$("#expandBtn")`, `player_ui.html:1051`) which adds `.open`, sizes its canvas, arms an idle timer, and loads the QR code for remote-queueing; closed via `#npClose` or Escape (`player_ui.html:1052,1081`).
-- Layout: `.nphead` (top bar: "PLAYING IN <room>", vinyl-toggle button, close button, `player_ui.html:513-517`) → `.npbody` (two-column grid: `.artstage` with album art or vinyl deck, and `.npmeta` with title/artist/seek/transport/volume, `player_ui.html:518-528`) → `.npfoot` (QR "scan to be the DJ" box + clock, `player_ui.html:551-557`).
+- Layout: `.nphead` (top bar: "PLAYING IN <room>", vinyl-toggle button, close button, `player_ui.html:513-517`) → `.npbody` (two-column grid: `.artstage` with album art or vinyl deck — or, with `.np-video`, the set video `.npvid`, see "Set video in now playing" — and `.npmeta` with title/artist/seek/transport/volume, `player_ui.html:518-528`) → `.npfoot` (QR "scan to be the DJ" box + clock, `player_ui.html:551-557`).
 - **Vinyl deck**: `#vinylBtn` (a small icon button in `.nphead`, `player_ui.html:515`) toggles `VINYL` and calls `applyVinyl()` (`player_ui.html:1429-1433`), which shows `#vinylStage` and hides `#npArtWrap` (or vice versa) inside the same `.artstage` panel — it replaces the album-art image, it is not a separate icon "at the top" of the view. A `setInterval` (`player_ui.html:1434-1439`) rotates the tonearm proportional to playback progress and toggles `.vspin` on `#disc` while playing (skipped under `prefers-reduced-motion`, `player_ui.html:299`).
 
 ### Media keys

@@ -3,6 +3,7 @@
 css/10-base.css
 css/20-chrome.css
 css/30-fullscreen.css
+modes/np/np.css
 modes/amp/amp.css
 modes/spectrum/spectrum.css
 modes/drive/drive.css
@@ -15,6 +16,7 @@ modes/spectrum/spectrum.html
 modes/drive/drive.html
 59-popovers.html
 70-script.html
+modes/np/np.js
 modes/amp/amp.js
 modes/spectrum/spectrum.js
 modes/drive/drive.js

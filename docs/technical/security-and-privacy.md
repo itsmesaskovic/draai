@@ -2,11 +2,13 @@
 
 > DRAAI's privacy is an **architectural property, not a policy promise**. There
 > is no cloud, no account, and no telemetry; the engine imports only the Python
-> standard library (no supply chain); the web UI loads nothing from the
+> standard library (no supply chain); the web UI ships nothing from the
 > internet; and every network connection the engine makes targets a device on
-> your own LAN. Two tests keep those invariants true on every push. The one
-> deliberate way bytes leave your network is your own yt-dlp, on a URL you
-> paste. Within your LAN, DRAAI trusts your network — it has no authentication.
+> your own LAN. Two tests keep those invariants true on every push. Bytes
+> deliberately leave your network in two ways: your own yt-dlp, on a URL you
+> paste, and the set video — while the full-screen view shows a set that has a
+> source link, the browser streams that set's video from its source site (see
+> "Set video" below). Within your LAN, DRAAI trusts your network — it has no authentication.
 
 ## Purpose
 
@@ -60,8 +62,11 @@ anywhere in the tree.
 **The UI loads nothing external.** The served interface is one self-contained
 offline document: all CSS and JS inline, no CDN, no web fonts, no external
 scripts or stylesheets. Every request the browser makes is a relative
-`/api/...` call to your own engine. So there is nothing to track you with, and
-the panel works with the internet unplugged. `test_ui_loads_nothing_from_the_internet`
+`/api/...` call to your own engine — except the set video: while the
+full-screen view shows a set with a source link, its `<video>` streams from the
+URL `/api/video` returned at runtime (see "Set video" below). So there is
+nothing to track you with, and the panel works with the internet unplugged
+(no video then; the cover stays). `test_ui_loads_nothing_from_the_internet`
 asserts the assembled UI contains no `https://`, no `@import`/`<link>`/external
 `src`, and only relative `fetch()` targets.
 
