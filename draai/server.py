@@ -21,6 +21,7 @@ from draai.playlists import delete_playlist, list_playlists, load_playlist, save
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
 from draai.listening import listened_snapshot, status_and_observe, trackinfo_snapshot
+from draai.video import VideoError, video_streams
 from draai.deletion import MAX_IDS as MAX_DELETE_IDS, delete_allowed, delete_tracks
 from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms,
     group_join, group_leave, play_tracks, queue_jump, queue_move,
@@ -486,6 +487,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/api/analysis"):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             self.send_json(get_analysis(qs.get("id", [""])[0]))
+        elif path == "/api/video":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                self.send_json({"streams": video_streams(qs.get("id", [""])[0])})
+            except VideoError as e:
+                self.send_json({"error": str(e)}, e.status)
         elif path.startswith("/api/rooms"):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             spk = speaker_by_uuid(qs.get("speaker", [""])[0])

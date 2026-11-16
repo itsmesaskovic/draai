@@ -29,7 +29,7 @@ reference; those docs are the full story.
    localStorage/sessionStorage (preferences persist via the engine:
    GET/POST `/api/prefs`), must work offline. Still overridable by
    dropping your own `player_ui.html` in the cwd.
-3. **No cloud, no accounts, no telemetry, ever.**
+3. **No cloud, no accounts, no telemetry, ever.** Exception: the full-screen view streams the playing set's video from its source site (via the user's own yt-dlp) while you watch.
 4. **No site-specific downloader code.** The yt-dlp integration hands the
    URL to the user's own yt-dlp installation; downloads land in
    `<first folder>/Imported/` with `--embed-metadata --embed-thumbnail`.

@@ -93,6 +93,7 @@ GET endpoints (`draai/server.py:312-482`):
 | `/api/queue` | 367 | That speaker's current play queue |
 | `/api/art` | 378 | Embedded album art blob for a track id |
 | `/api/analysis` | 393 | Cached loudness/band analysis for a track id |
+| `/api/video` | 490 | `?id=<track id>`: the set's direct video streams, resolved by the user's own yt-dlp (`draai/video.py`, `-J --no-playlist -- <source_url>`, 30 s timeout, nothing downloaded). 200 `{"streams": [{url, height, fps, vcodec, ext}]}` — video-only `https` formats with a positive height, tallest first (`fps` 0 when unknown). Cached per track until 5 min before the earliest `expire=` in the stream URLs (1 h if none); a per-track lock means concurrent requests run yt-dlp once. Errors are `{"error": sentence}`: no source link 404 "This set has no video link.", no yt-dlp 404 "Install yt-dlp to see set videos.", yt-dlp failure/timeout/bad JSON 502 "Couldn't load the video for this set.", nothing usable 404 "No video stream was found for this set." |
 | `/api/rooms` | 396 | Grouping topology visible to a speaker |
 | `/api/eq` | 403 | Current bass/treble/loudness for a speaker |
 | `/api/access` | 413 | LAN URL other devices can use to reach this server (guest mode) |

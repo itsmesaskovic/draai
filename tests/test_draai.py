@@ -1081,6 +1081,126 @@ class DraaiTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
+    # -- set video (yt-dlp stream resolver) ------------------------------------------
+
+    def _fake_ytdlp(self, expire=None, fail=False):
+        """Write an executable stand-in for yt-dlp that prints fixed JSON and
+        counts its invocations; point video.find_tool at it. Never the real one."""
+        import time
+        from draai import video
+        with video._cache_lock:
+            video._cache.clear()
+        exp = int(time.time()) + 7200 if expire is None else expire
+        fmts = [
+            {"url": "https://cdn.example/a", "vcodec": "none", "acodec": "opus",
+             "protocol": "https", "height": None, "ext": "webm"},
+            {"url": "https://cdn.example/h.m3u8", "vcodec": "avc1", "acodec": "none",
+             "protocol": "m3u8_native", "height": 1080, "fps": 30, "ext": "mp4"},
+            {"url": "https://cdn.example/2160?expire=%d&x=1" % exp, "vcodec": "av01.0.12M.08",
+             "acodec": "none", "protocol": "https", "height": 2160, "fps": 60, "ext": "mp4",
+             "format_id": "401"},
+            {"url": "https://cdn.example/1080", "vcodec": "vp9", "acodec": "none",
+             "protocol": "https", "height": 1080, "fps": 30, "ext": "webm"},
+            {"url": "https://cdn.example/720", "vcodec": "avc1.4d401f", "acodec": None,
+             "protocol": "https", "height": 720, "ext": "mp4"},
+        ]
+        count = os.path.join(self.tmp, "ytdlp-calls")
+        script = os.path.join(self.tmp, "fake-yt-dlp")
+        with open(script, "w") as f:
+            f.write("#!%s\nimport sys\nopen(%r, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                    % (sys.executable, count))
+            if fail:
+                f.write("sys.exit(1)\n")
+            else:
+                f.write("print(%r)\n" % json.dumps({"formats": fmts}))
+        os.chmod(script, 0o755)
+        video.find_tool = lambda name: script if name == "yt-dlp" else None
+        self.addCleanup(setattr, video, "find_tool", draai.media.find_tool)
+
+        def calls():
+            if not os.path.exists(count):
+                return []
+            with open(count) as fh:
+                return fh.read().splitlines()
+        return video, calls
+
+    def _video_track(self, tid, url="https://www.youtube.com/watch?v=abc"):
+        sp.tracks_by_id[tid] = {"id": tid, "title": "Set", "path": "/set.mp3",
+                                "source_url": url}
+        self.addCleanup(sp.tracks_by_id.pop, tid, None)
+
+    def test_video_streams_filters_and_sorts(self):
+        video, calls = self._fake_ytdlp()
+        self._video_track("v" * 16)
+        streams = video.video_streams("v" * 16)
+        self.assertEqual([s["height"] for s in streams], [2160, 1080, 720])
+        for s in streams:
+            self.assertEqual(set(s), {"url", "height", "fps", "vcodec", "ext"})
+            self.assertTrue(s["url"].startswith("https://cdn.example/"))
+        self.assertEqual(streams[1], {"url": "https://cdn.example/1080", "height": 1080,
+                                      "fps": 30, "vcodec": "vp9", "ext": "webm"})
+        self.assertEqual(streams[2]["fps"], 0)
+        self.assertEqual(calls(), ["-J --no-playlist -- https://www.youtube.com/watch?v=abc"])
+
+    def test_video_streams_cached(self):
+        video, calls = self._fake_ytdlp()
+        self._video_track("v" * 16)
+        a = video.video_streams("v" * 16)
+        b = video.video_streams("v" * 16)
+        self.assertEqual(a, b)
+        self.assertEqual(len(calls()), 1)
+
+    def test_video_cache_expires(self):
+        import time
+        video, calls = self._fake_ytdlp(expire=int(time.time()) + 300)
+        self._video_track("v" * 16)
+        video.video_streams("v" * 16)
+        video.video_streams("v" * 16)
+        self.assertEqual(len(calls()), 2)
+
+    def test_video_errors(self):
+        video, calls = self._fake_ytdlp()
+        self._video_track("n" * 16, url="")
+        for tid in ("n" * 16, "0" * 16):
+            with self.assertRaises(video.VideoError) as cm:
+                video.video_streams(tid)
+            self.assertEqual(cm.exception.status, 404)
+            self.assertEqual(str(cm.exception), "This set has no video link.")
+        self.assertEqual(calls(), [])
+        self._video_track("v" * 16)
+        video.find_tool = lambda name: None
+        with self.assertRaises(video.VideoError) as cm:
+            video.video_streams("v" * 16)
+        self.assertEqual((str(cm.exception), cm.exception.status),
+                         ("Install yt-dlp to see set videos.", 404))
+        video, calls = self._fake_ytdlp(fail=True)
+        with self.assertRaises(video.VideoError) as cm:
+            video.video_streams("v" * 16)
+        self.assertEqual((str(cm.exception), cm.exception.status),
+                         ("Couldn't load the video for this set.", 502))
+        self.assertEqual(len(calls()), 1)
+
+    def test_api_video_route(self):
+        video, calls = self._fake_ytdlp()
+        self._video_track("v" * 16)
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            base = "http://127.0.0.1:%d/api/video?id=" % port
+            with urllib.request.urlopen(base + "v" * 16, timeout=10) as r:
+                body = json.loads(r.read().decode("utf-8"))
+            self.assertEqual([s["height"] for s in body["streams"]], [2160, 1080, 720])
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(base + "0" * 16, timeout=10)
+            self.assertEqual(cm.exception.code, 404)
+            self.assertEqual(json.loads(cm.exception.read().decode("utf-8")),
+                             {"error": "This set has no video link."})
+            cm.exception.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
     def test_listening_delta_crediting(self):
         L = self._listen_reset()
         A, B = {"uuid": "A", "ip": "1.1.1.1"}, {"uuid": "B", "ip": "1.1.1.2"}

@@ -80,6 +80,7 @@ required for any feature, or bundled: DRAAI detects them at runtime with
 | Tool | When it reaches out | Notes |
 | --- | --- | --- |
 | `yt-dlp` | You paste a URL and press import | User-initiated per request. `CLAUDE.md` rule 4 — no site-specific downloader code ships here. |
+| `yt-dlp` (set video) | You open the full-screen view of a set that has a source link | One metadata request (`-J`, nothing downloaded) to the source site via `GET /api/video`, cached per set until its stream links expire. The browser then streams the video straight from the source site's video CDN while you watch. |
 | `beat_this` | First analysis of a track, to fetch its model **once** | Not per-request and not visible in the UI, so it is called out here explicitly. Avoid it entirely by placing the checkpoint at `<config>/beat_this.ckpt` — DRAAI then passes `--model <path>` and the download path never runs. |
 
 The `beat_this` case is the one worth stating plainly, because it is the only
@@ -89,6 +90,18 @@ torch < 2.6 that file is unpickled, which is arbitrary code execution if the
 server or the transport is ever compromised; on torch >= 2.6 `weights_only`
 defaults to true and the risk is limited to a corrupt model. Pinning a local
 checkpoint removes the question either way, and is what the README recommends.
+
+**Set video (the one exception to rule 3's "nothing leaves").** A set imported
+with yt-dlp carries its source link in its tags. When you open the full-screen
+view of such a set, the engine runs your own yt-dlp once (`draai/video.py`,
+argv list, no shell, `--` before the URL) to ask the source site for the
+set's video streams, and the browser plays the video directly from that
+site's video CDN while you watch. So the source site sees your IP and that
+you are watching that video — the same as watching it there. Nothing else is
+sent: no account, no cookies, no library data. Without yt-dlp installed, or
+for a set without a source link, nothing happens. The link itself never
+leaves the engine except as yt-dlp's argument; `/api/tracks` only exposes
+`has_video`. `CLAUDE.md` rule 3 records this exception.
 
 Neither tool changes the guarantee for a default install: **with nothing
 optional installed, no DRAAI process ever contacts the internet.**
