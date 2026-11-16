@@ -143,10 +143,11 @@ function filtered(){ const q=A.query.trim().toLowerCase(); if(!q) return A.track
   return A.tracks.filter(t=>(t.title+" "+(t.artist||"")+" "+(t.album||"")).toLowerCase().includes(q)); }
 function renderContent(){ const c=$("#content");
   $$(".seg").forEach(s=>s.classList.toggle("on",s.dataset.view===A.view));
-  if(A.view==="queue") return renderQueue(c);
+  if(!songsOnScreen()){ dropSel(); return A.view==="queue" ? renderQueue(c) : renderHome(c); }
   const list=filtered();
-  if(A.view==="home" && !A.query.trim()) return renderHome(c);
-  const view=sortTracks(list); window.VIEWLIST=view;
+  const view=sortTracks(list);
+  window.VIEWLIST=view;   /* renderSongRows narrows this to the on-screen order when grouped */
+  const rows=view.length?renderSongRows(view):"";
   const gkeys = A.group==="none" ? [] : [...new Set(view.map(t=>groupOf(t).key))];
   const allColl = gkeys.length>0 && gkeys.every(k=>A.collapsed.has(k));
   const ctl=`<div class="qtools">
@@ -157,7 +158,8 @@ function renderContent(){ const c=$("#content");
     <button class="btn${A.selMode?" acc":""}" id="selBtn">Select</button>
   </div>`;
   c.innerHTML=`<div class="listwrap"><div class="listhead"><div><h2>${A.query?"Results":"Songs"}</h2><span class="sub">${view.length} track${view.length!==1?"s":""}${view.length>500?" · showing 500":""}</span></div>${ctl}</div>
-  ${view.length?renderSongRows(view):emptyBlock(A.query?"No songs match":"No music yet","Scan a folder to build your library.")}</div>`;
+  ${view.length?rows:emptyBlock(A.query?"No songs match":"No music yet","Scan a folder to build your library.")}</div>`;
+  pruneSel();
 }
 /* ---- home: continue listening / most played / recently added ---- */
 function fmtListened(sec){ sec=Math.round(+sec||0); const h=(sec/3600)|0, m=(sec%3600/60)|0;
@@ -525,6 +527,8 @@ async function boot(){
   driveC=mkCanvas(".drivestage");
   applyPal(); wire(); renderSleep(); requestAnimationFrame(tick);
   try{ const r=await fetch("/api/state"); if(!r.ok)throw 0; }catch(e){ DEMO=true; }
+  /* Delete is offered only in DRAAI on this Mac — never on phones/LAN, never in demo */
+  if(isLocalHost() && !DEMO) $("#selDel").classList.remove("hidden"); else $("#selDel").remove();
   if(DEMO){ $("#demoBadge").classList.remove("hidden"); toast("Demo mode — no engine detected. Everything works on fake data; connect DRAAI to control real speakers.",true); }
   await loadPrefs();
   await guard(refreshState);
@@ -601,6 +605,8 @@ function renderSongRows(view){
     groups.get(g.key).ts.push(t);
   }
   const list=[...groups.values()].sort((a,b)=>a.unknown-b.unknown);   /* stable: Unknown album last */
+  /* selection follows what is on screen: grouped order, collapsed groups left out */
+  window.VIEWLIST=list.flatMap(g=>A.collapsed.has(g.key)?[]:g.ts);
   window.GROUPIDS={}; window.GROUPKEYS=[];
   let out="";
   let gi=0;
@@ -621,25 +627,37 @@ function renderSongRows(view){
   return out;
 }
 /* ---- selection ---- */
-let lastSelIdx=null;
+/* Selection only exists on the Songs list, and A.sel is always exactly the rows
+   highlighted on screen: window.VIEWLIST is the rendered order (grouped order,
+   collapsed groups excluded), and every render prunes A.sel to it. Anything a
+   permanent delete acts on must be visible first. */
+let lastSelId=null;   /* range anchor, by id (indexes go stale when the list re-renders) */
+function songsOnScreen(){ return A.view!=="queue" && !(A.view==="home" && !A.query.trim()); }
 function viewIndexOf(id){ return (window.VIEWLIST||[]).findIndex(t=>String(t.id)===String(id)); }
 function toggleSel(id, range){
   id=String(id);
-  const i=viewIndexOf(id);
-  if(range && lastSelIdx!=null && i>=0){
-    const [a,b]=[Math.min(lastSelIdx,i),Math.max(lastSelIdx,i)];
+  const i=viewIndexOf(id), a0=lastSelId==null?-1:viewIndexOf(lastSelId);
+  if(i<0) return;
+  if(range && a0>=0){
+    const [a,b]=[Math.min(a0,i),Math.max(a0,i)];
     for(let j=a;j<=b;j++) A.sel.add(String(window.VIEWLIST[j].id));
   } else {
     A.sel.has(id)?A.sel.delete(id):A.sel.add(id);
-    lastSelIdx=i;
+    lastSelId=id;
   }
   updateSelBar(); renderContent();
 }
 function selIdsInOrder(){
   const set=A.sel;
-  return (window.VIEWLIST||A.tracks).filter(t=>set.has(String(t.id))).map(t=>t.id);
+  return (window.VIEWLIST||[]).filter(t=>set.has(String(t.id))).map(t=>t.id);
 }
-function clearSel(){ A.sel.clear(); A.selMode=false; lastSelIdx=null; updateSelBar(); renderContent(); }
+function pruneSel(){ const vis=new Set((window.VIEWLIST||[]).map(t=>String(t.id))); let ch=false;
+  for(const id of [...A.sel]) if(!vis.has(id)){ A.sel.delete(id); ch=true; }
+  if(lastSelId!=null && !vis.has(lastSelId)) lastSelId=null;
+  if(ch) updateSelBar(); }
+function dropSel(){ window.VIEWLIST=null; lastSelId=null;
+  if(A.sel.size||A.selMode){ A.sel.clear(); A.selMode=false; updateSelBar(); } }
+function clearSel(){ A.sel.clear(); A.selMode=false; lastSelId=null; updateSelBar(); renderContent(); }
 function updateSelBar(){
   $("#selCount").textContent=A.sel.size+" selected";
   $("#selBar").classList.toggle("on",A.sel.size>0);
@@ -659,7 +677,7 @@ $("#content").addEventListener("click",e=>{
   const row=T("[data-play]");
   if(row && !T(".iconbtn") && (A.selMode||e.metaKey||e.ctrlKey||e.shiftKey)){
     e.stopPropagation(); e.preventDefault();
-    toggleSel(row.dataset.play, e.shiftKey);
+    if(songsOnScreen()) toggleSel(row.dataset.play, e.shiftKey);   /* Home: modifier-clicks do nothing */
     return;
   }
 },true);
@@ -671,7 +689,50 @@ $("#selPlay").addEventListener("click",()=>{ const ids=selIdsInOrder(); if(ids.l
 $("#selNext").addEventListener("click",()=>guard(async()=>{ const ids=selIdsInOrder(); if(!ids.length)return; await api("/api/enqueue",{speaker:A.speaker.uuid,ids,next:true}); toast(ids.length+" tracks playing next",true); clearSel(); poll(); }));
 $("#selAdd").addEventListener("click",()=>guard(async()=>{ const ids=selIdsInOrder(); if(!ids.length)return; await api("/api/enqueue",{speaker:A.speaker.uuid,ids}); toast(ids.length+" tracks added",true); clearSel(); poll(); }));
 $("#selClear").addEventListener("click",clearSel);
-document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&A.sel.size)clearSel(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&A.sel.size&&!delOpen())clearSel(); });
+/* ---- permanent delete (only in DRAAI on this Mac; the engine enforces it too) ---- */
+function isLocalHost(){ return ["localhost","127.0.0.1","[::1]","::1"].includes(location.hostname); }
+let delIds=[], delBusy=false, delReturn=null;
+function delOpen(){ return !$("#delOverlay").classList.contains("hidden"); }
+function openDeleteModal(ids){
+  ids=(ids||[]).map(String); if(!ids.length) return;
+  const byId=new Map(A.tracks.map(t=>[String(t.id),t]));
+  const name=id=>{ const t=byId.get(id); return t&&t.title?t.title:"this track"; };
+  delIds=ids; delBusy=false; delReturn=document.activeElement;
+  $("#delTitle").textContent = ids.length===1 ? `Delete “${name(ids[0])}” forever?` : `Delete ${ids.length} sets forever?`;
+  $("#delBody").textContent = ids.length===1 ? "The file will be erased from your disk. This can't be undone."
+    : `“${name(ids[0])}” and ${ids.length-1} more will be erased from your disk. This can't be undone.`;
+  $("#delGo").disabled=false;
+  $("#delOverlay").classList.remove("hidden");
+  $("#delCancel").focus();
+}
+function closeDeleteModal(){ if(delBusy) return;
+  $("#delOverlay").classList.add("hidden"); delIds=[];
+  if(delReturn&&delReturn.focus&&document.contains(delReturn)) delReturn.focus(); delReturn=null; }
+async function confirmDelete(){ if(delBusy||!delIds.length) return;
+  delBusy=true; $("#delGo").disabled=true; $("#delCancel").disabled=true;
+  let r=null;
+  try{ r=await api("/api/delete",{ids:delIds}); }
+  catch(e){ toast(e.message||String(e)); }
+  delBusy=false; $("#delCancel").disabled=false; closeDeleteModal();
+  if(!r) return;
+  const n=r.deleted||0, failed=r.failed||[];
+  if(n) toast(`Deleted ${n} set${n!==1?"s":""}`,true);
+  if(failed.length) toast(failed[0].error||"Some files couldn't be deleted.");
+  clearSel(); await refreshTracks();
+}
+$("#selDel").addEventListener("click",()=>openDeleteModal(selIdsInOrder()));
+$("#delCancel").addEventListener("click",closeDeleteModal);
+$("#delGo").addEventListener("click",confirmDelete);
+$("#delOverlay").addEventListener("click",e=>{ if(e.target.id==="delOverlay") closeDeleteModal(); });
+/* while the modal is up it owns the keyboard: Escape cancels, Tab stays inside, and
+   nothing reaches the global shortcuts (Space would otherwise pause the speaker) */
+window.addEventListener("keydown",e=>{ if(!delOpen()) return;
+  e.stopImmediatePropagation();
+  if(e.key==="Escape"){ e.preventDefault(); closeDeleteModal(); return; }
+  if(e.key==="Tab"){ const b=[$("#delCancel"),$("#delGo")].filter(x=>!x.disabled); if(!b.length){ e.preventDefault(); return; }
+    const i=b.indexOf(document.activeElement); e.preventDefault();
+    b[(i<0?0:i+(e.shiftKey?-1:1)+b.length)%b.length].focus(); } },true);
 /* ---- playlists ---- */
 async function loadPlaylists(){
   try{ const r=await api("/api/playlists"); A.playlists=r.playlists||[]; renderPlaylists(); }catch(e){}

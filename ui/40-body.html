@@ -106,6 +106,18 @@
   <button class="btn" id="selPlay">Play</button>
   <button class="btn" id="selNext">Play next</button>
   <button class="btn" id="selAdd">Add to queue</button>
+  <button class="btn hidden" id="selDel">Delete…</button>
   <button class="btn" id="selClear">✕</button>
+</div>
+<!-- permanent delete confirmation (local Mac only; see openDeleteModal) -->
+<div id="delOverlay" class="hidden">
+  <div class="dbox" role="alertdialog" aria-modal="true" aria-labelledby="delTitle" aria-describedby="delBody">
+    <h3 id="delTitle"></h3>
+    <p id="delBody"></p>
+    <div class="rowbtns">
+      <button class="btn" id="delCancel">Cancel</button>
+      <button class="btn danger" id="delGo">Delete forever</button>
+    </div>
+  </div>
 </div>
 

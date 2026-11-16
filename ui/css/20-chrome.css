@@ -175,3 +175,13 @@
 .slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 0 8px rgb(var(--ac));cursor:pointer}
 .slider::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:#fff;box-shadow:0 0 8px rgb(var(--ac));cursor:pointer}
 
+/* --- permanent delete: confirmation modal + destructive button --- */
+#delOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);z-index:70;display:flex;align-items:center;justify-content:center}
+.dbox{width:min(440px,92vw);background:var(--elev2);border:1px solid var(--line2);border-radius:16px;padding:20px;box-shadow:0 30px 90px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:10px}
+.dbox h3{margin:0;font-size:15.5px;line-height:1.35;overflow-wrap:anywhere}
+.dbox p{margin:0 0 6px;font-size:13px;line-height:1.5;color:var(--dim);overflow-wrap:anywhere}
+.dbox .rowbtns{display:flex;gap:8px;justify-content:flex-end}
+.btn.danger{color:#fff;background:rgb(214 48 72);border-color:transparent;font-weight:600}
+.btn.danger:hover{background:rgb(232 60 86)}
+.btn.danger:disabled{opacity:.55;cursor:default}
+.btn:focus-visible{outline:2px solid rgb(var(--ac));outline-offset:2px}
