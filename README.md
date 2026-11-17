@@ -109,13 +109,13 @@ worked out of the box.
 **Using Homebrew?** That's the easiest way to install and keep it current:
 
 ```
-brew tap itsmesaskovic/draai
-brew install draai
+brew install itsmesaskovic/draai/draai
 brew services start draai      # runs in the background, starts at login
 open http://localhost:8765
 ```
 
-Update with `brew upgrade draai`. ffmpeg comes along for the visuals.
+After that it's just `draai`: update with `brew upgrade draai`. ffmpeg comes along
+for the visuals.
 
 **Without Homebrew:**
 
