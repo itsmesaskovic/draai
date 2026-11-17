@@ -9,6 +9,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler
 
 from draai import __version__, state
+from draai.install import install_kind
 from draai.constants import AUDIO_EXTS
 from draai.state import (config, positions, positions_lock, speakers, state_lock, tracks,
                          tracks_by_id, yt_jobs)
@@ -403,6 +404,7 @@ class Handler(BaseHTTPRequestHandler):
                             "folder": folders[0] if folders else "",
                             "track_count": n,
                             "version": __version__,
+                            "install": install_kind(),
                             "last_speaker": config.get("last_speaker")})
         elif path == "/api/tracks":
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)

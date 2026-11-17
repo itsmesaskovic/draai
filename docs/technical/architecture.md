@@ -19,7 +19,8 @@ Module map (all under `draai/`), one line each:
 | Module | Responsibility |
 |---|---|
 | `draai/__init__.py:1` | Package root; holds `__version__` only. |
-| `draai/__main__.py` | CLI entry point: flag handling, port scan, banner, warmup thread, autostart install/uninstall. |
+| `draai/__main__.py` | CLI entry point: flag handling, port scan, banner, warmup thread. |
+| `draai/install.py` | Leaf-ish module (stdlib + `constants`): `install_kind()` (`homebrew` / `pyz` / `source`, from the package's real path) and autostart install/uninstall. |
 | `draai/constants.py` | Leaf module: app name, port, audio extensions, storage paths, queue/resume tuning constants. |
 | `draai/state.py` | Leaf module: shared mutable runtime state (`tracks`, `speakers`, `config`, locks, caches) — see `draai/state.py:1`. |
 | `draai/util.py` | Leaf module: `hms_to_sec` / `sec_to_hms` time-string helpers — `draai/util.py:4`, `draai/util.py:12`. |
@@ -93,14 +94,14 @@ likely be deleted; see [Gotchas](#gotchas).
 **`python3 -m draai`** runs `draai/__main__.py:main()` directly.
 **`draai.pyz`** is a zipapp with `main="draai.__main__:main"`
 (`build.py:31`) — same function, different launch mechanism.
-`__main__.py`'s own `_launch_args()` (`draai/__main__.py:18-29`)
+`_launch_args()` in `draai/install.py`
 distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
 `.pyz`.
 
-`main()` flow (`draai/__main__.py:80-136`):
-1. `--version` → print `APP_NAME __version__` and return (`:81-83`).
+`main()` flow (`draai/__main__.py:18-78`):
+1. `--version` → print `APP_NAME __version__` and return (`:19-21`).
 2. `--install-autostart` / `--uninstall-autostart` → run and return
-   (`:84-89`).
+   (`:22-27`).
 3. `load_config()` (`draai/config.py:9`) then `load_positions()`
    (`draai/backends.py:309`) — populate `state.config` and
    `state.positions` from disk before the server exists. `load_listening()`
@@ -108,13 +109,13 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    and `load_trackinfo()` loads `state.trackinfo` from `trackinfo.json`.
 4. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
    `port` in `range(PREFERRED_PORT, PREFERRED_PORT + 20)`
-   (`draai/__main__.py:94-100`); `PREFERRED_PORT` is `8765`
+   (`draai/__main__.py:34-40`); `PREFERRED_PORT` is `8765`
    (`draai/constants.py:4`). First bind that succeeds wins; the chosen
    port is stored in `state.server_port`. If all 20 ports are taken, print
-   an error and `sys.exit(1)` (`:101-103`).
+   an error and `sys.exit(1)` (`:41-43`).
 5. Print the banner (control-panel URL, "keep this window open", the
-   macOS incoming-connections hint, Ctrl+C to quit) — `:105-118`.
-6. Start a **daemon warmup thread** (`draai/__main__.py:121-129`): calls
+   macOS incoming-connections hint, Ctrl+C to quit) — `:44-58`.
+6. Start a **daemon warmup thread** (`draai/__main__.py:61-70`): calls
    `scan_all()` (`draai/library.py:274`) once, then retries
    `refresh_speakers()` (`draai/backends.py:73`) up to 4 times with a
    4-second sleep between attempts, stopping early if speakers are found.
@@ -128,18 +129,18 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    swallows every per-speaker error.
 7. Unless `--headless` is in `sys.argv`, a one-shot `threading.Timer(0.8,
    ...)` opens the control panel in the default browser via
-   `webbrowser.open(url)` (`:131-132`). `--headless` is what the launchd
+   `webbrowser.open(url)` (`:72-73`). `--headless` is what the launchd
    autostart plist passes so login doesn't pop a browser window.
 8. `httpd.serve_forever()`, with `KeyboardInterrupt` caught to print
-   "Bye!" and exit cleanly (`:133-136`).
+   "Bye!" and exit cleanly (`:74-77`).
 
 ### Autostart
 
-`install_autostart()` (`draai/__main__.py:32-63`) writes a launchd plist
+`install_autostart()` (`draai/install.py`) writes a launchd plist
 to `~/Library/LaunchAgents/com.draai.player.plist` with
 `RunAtLoad=true`, `KeepAlive=true`, and stdout/stderr redirected to
 `~/Library/Logs/draai.log`. The `ProgramArguments` array is built from
-`_launch_args()` (`:18-29`):
+`_launch_args()`:
 - If launched from a `.pyz` (argv0 ends in `.pyz`): `[python, argv0,
   "--headless"]`, working directory = the `.pyz`'s own directory.
 - Otherwise (running as `python3 -m draai`): `[python, "-m", "draai",
@@ -147,8 +148,30 @@ to `~/Library/LaunchAgents/com.draai.player.plist` with
   directory (so `-m draai` resolves from there).
 
 After writing the plist, it best-effort `launchctl unload`s then `load
--w`s it (`:55-59`) so a re-install takes effect immediately.
-`uninstall_autostart()` (`:66-77`) unloads and deletes the plist file.
+-w`s it so a re-install takes effect immediately.
+`uninstall_autostart()` unloads and deletes the plist file.
+
+On a Homebrew install (`install_kind() == "homebrew"`) `install_autostart()`
+writes nothing and points at `brew services start draai` instead, so DRAAI
+never runs twice at login. `/api/state` reports the kind as `install`, and
+the sidebar footer's version line tells Homebrew users how to update.
+
+### Homebrew and releases
+
+The tap is the separate repo `itsmesaskovic/homebrew-draai`
+(`Formula/draai.rb`). The formula installs the release's `draai.pyz` into
+`libexec`, writes a `bin/draai` wrapper that runs it on Homebrew's
+`python@3.14`, recommends `ffmpeg`, offers `yt-dlp` as `--with-yt-dlp`, and
+defines a `service` (`draai --headless`, keep-alive, log in
+`$(brew --prefix)/var/log/draai.log`). The tap's own CI audits, installs,
+tests and starts the service on macOS.
+
+`.github/workflows/release.yml` runs when a release is published: it
+checks the tag equals `v` + `__version__`, runs the suite, builds
+`draai.pyz` from the tag, attaches it to the release (`--clobber`),
+verifies the published download's sha256, then rewrites the formula's
+`url` and `sha256` and pushes to the tap with the `HOMEBREW_TAP_TOKEN`
+secret. Without that secret the formula step is skipped with a warning.
 
 ### `build.py`: staging the zipapp
 
@@ -229,7 +252,7 @@ they travel with the music, not the app.
 ### Threading model
 
 - The HTTP server is a stdlib `ThreadingHTTPServer`
-  (`draai/__main__.py:96`) — each request is handled on its own thread,
+  (`draai/__main__.py:36`) — each request is handled on its own thread,
   so a slow speaker call (SOAP over the network, `soap_call()` at
   `draai/backends.py:184`, has an 8s `urlopen` timeout) doesn't block
   other API calls.
@@ -249,7 +272,7 @@ they travel with the music, not the app.
   `/api/analysis` requests for the same track don't spawn duplicate
   ffmpeg jobs (`draai/analysis.py:126-135`).
 - Background work is always a `daemon=True` thread so it never blocks
-  process exit: the boot warmup (`draai/__main__.py:129`), per-track
+  process exit: the boot warmup (`draai/__main__.py:69`), per-track
   analysis jobs (`draai/analysis.py:130`), yt-dlp import jobs
   (`draai/importer.py:71`), and the queue-fill-in-background half of
   `play_tracks()` (`draai/backends.py:305`, guarded by
@@ -284,7 +307,7 @@ message instead of raising an import error.
   response header, harmless but a naming fossil from before the DRAAI
   rename, same family as the `SonosMP3Player` config directory name.
 - **The port scan is why "is DRAAI already running?" matters.** Because
-  `main()` silently tries 20 ports in a row (`draai/__main__.py:94-100`),
+  `main()` silently tries 20 ports in a row (`draai/__main__.py:34-40`),
   a second instance doesn't fail loudly — it just binds the next free
   port and prints a different URL in its own banner. There is no
   cross-instance lock file.
@@ -307,10 +330,11 @@ message instead of raising an import error.
 ## References
 
 - `draai/__init__.py:1` — `__version__`.
-- `draai/__main__.py:80-136` — `main()`: flags, port scan, banner, warmup
+- `draai/__main__.py:18-78` — `main()`: flags, port scan, banner, warmup
   thread, `--headless`, browser open.
-- `draai/__main__.py:18-29` — `_launch_args()`.
-- `draai/__main__.py:32-77` — `install_autostart()` / `uninstall_autostart()`.
+- `draai/install.py:17` — `install_kind()`.
+- `draai/install.py:27` — `_launch_args()`.
+- `draai/install.py:41-91` — `install_autostart()` / `uninstall_autostart()`.
 - `build.py:18-35` — `build()`: zipapp staging and archive creation.
 - `draai/server.py:27-42` — `_load_ui()` resolution order.
 - `draai/server.py:286-288` — `Handler` class header.

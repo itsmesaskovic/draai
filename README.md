@@ -106,6 +106,18 @@ worked out of the box.
 
 ## Quick start
 
+**Using Homebrew?** That's the easiest way to install and keep it current:
+
+```
+brew install itsmesaskovic/draai/draai
+brew services start draai      # runs in the background, starts at login
+open http://localhost:8765
+```
+
+Update with `brew upgrade draai`. ffmpeg comes along for the visuals.
+
+**Without Homebrew:**
+
 1. Click the green **Code** button → **Download ZIP**, and unpack it
    (or `git clone https://github.com/itsmesaskovic/draai.git`).
 2. Open **Terminal** (press Cmd+Space, type "Terminal", press Enter).
@@ -263,6 +275,7 @@ python3 -m draai --install-autostart
 
 Then just open http://localhost:8765 whenever you want music.
 Undo anytime with `--uninstall-autostart`.
+Installed with Homebrew? Use `brew services start draai` instead.
 
 ### yt-dlp integration (optional, read this)
 

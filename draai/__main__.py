@@ -1,6 +1,4 @@
 """DRAAI entry point:  python3 -m draai   (and the packaged draai.pyz)."""
-import os
-import subprocess
 import sys
 import threading
 import time
@@ -13,69 +11,8 @@ from draai.config import load_config
 from draai.library import scan_all
 from draai.backends import load_positions, refresh_speakers
 from draai.server import Handler
+from draai.install import install_autostart, uninstall_autostart
 from draai.listening import load_listening, load_trackinfo, start_watcher
-
-
-def _launch_args():
-    """How to re-launch DRAAI at login: the .pyz if we're running from one,
-    else `python -m draai` from the folder that contains the package."""
-    python = sys.executable or "/usr/bin/python3"
-    argv0 = os.path.abspath(sys.argv[0])
-    if argv0.endswith(".pyz"):
-        args = [python, argv0, "--headless"]
-        workdir = os.path.dirname(argv0)
-    else:
-        args = [python, "-m", "draai", "--headless"]
-        workdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return args, workdir
-
-
-def install_autostart():
-    plist_dir = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
-    plist_path = os.path.join(plist_dir, "com.draai.player.plist")
-    log_path = os.path.join(os.path.expanduser("~"), "Library", "Logs", "draai.log")
-    args, workdir = _launch_args()
-    prog = "".join("<string>%s</string>" % a for a in args)
-    plist = """<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.draai.player</string>
-  <key>ProgramArguments</key>
-  <array>%s</array>
-  <key>WorkingDirectory</key><string>%s</string>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>%s</string>
-  <key>StandardErrorPath</key><string>%s</string>
-</dict></plist>
-""" % (prog, workdir, log_path, log_path)
-    os.makedirs(plist_dir, exist_ok=True)
-    with open(plist_path, "w") as f:
-        f.write(plist)
-    try:
-        subprocess.run(["launchctl", "unload", plist_path], capture_output=True)
-        subprocess.run(["launchctl", "load", "-w", plist_path], capture_output=True)
-    except Exception:
-        pass
-    print("Installed. DRAAI now starts automatically when you log in,")
-    print("running quietly in the background — no Terminal window needed.")
-    print("Control panel:  http://localhost:%d" % PREFERRED_PORT)
-    print("To undo:        python3 -m draai --uninstall-autostart")
-
-
-def uninstall_autostart():
-    plist_path = os.path.join(os.path.expanduser("~"), "Library",
-                              "LaunchAgents", "com.draai.player.plist")
-    try:
-        subprocess.run(["launchctl", "unload", plist_path], capture_output=True)
-    except Exception:
-        pass
-    if os.path.exists(plist_path):
-        os.remove(plist_path)
-        print("Removed. DRAAI no longer starts at login.")
-    else:
-        print("Nothing to remove — autostart was not installed.")
 
 
 def main():

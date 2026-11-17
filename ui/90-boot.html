@@ -430,6 +430,8 @@ function toggleShuffle(){ A.shuffle=!A.shuffle; $("#shufBtn").classList.toggle("
 /* ---------------- state refresh ---------------- */
 async function refreshState(){ const s=await api("/api/state"); A.speakers=s.speakers||[]; A.folder=s.folder||""; A.trackCount=s.track_count||0;
   A.folders=s.folders||(s.folder?[s.folder]:[]); renderFolders(); $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks";
+  const vl=$("#verLine"); if(vl && s.version){ vl.textContent="v"+s.version;
+    vl.title=s.install==="homebrew"?"Installed with Homebrew. Update with: brew upgrade draai":"DRAAI "+s.version; }
   if(!A.speaker && A.speakers.length){ A.speaker=A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers[0]; applyBackendUI(); }
   renderRooms(); }
 async function refreshTracks(){ await guard(async()=>{ const d=await api("/api/tracks?q="); A.tracks=d.tracks||[]; A.trackCount=d.total??A.tracks.length;

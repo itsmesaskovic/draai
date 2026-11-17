@@ -435,6 +435,7 @@ class DraaiTests(unittest.TestCase):
             self.assertEqual(st["track_count"], 1)
             self.assertEqual(len(st["speakers"]), 2)
             self.assertIn("version", st)
+            self.assertEqual(st["install"], "source")
             tr = get("/api/tracks")
             self.assertEqual(tr["tracks"][0]["title"], "D-Track")
             self.assertTrue(tr["tracks"][0]["has_art"])
@@ -442,6 +443,39 @@ class DraaiTests(unittest.TestCase):
             self.assertEqual(br["path"], os.path.realpath(self.tmp))
         finally:
             httpd.shutdown()
+
+    def test_install_kind_detects_homebrew(self):
+        """A Homebrew install lives under <prefix>/Cellar/draai/<ver>/ — the
+        engine then defers autostart and updates to brew."""
+        from draai.install import install_kind
+        self.assertEqual(install_kind(
+            "/opt/homebrew/Cellar/draai/2.7.0/libexec/draai.pyz/draai/__init__.py"),
+            "homebrew")
+        self.assertEqual(install_kind(
+            "/usr/local/Cellar/draai/2.7.0/libexec/draai.pyz/draai/__init__.py"),
+            "homebrew")
+        self.assertEqual(install_kind("/Users/x/Downloads/draai.pyz/draai/__init__.py"), "pyz")
+        self.assertEqual(install_kind("/Users/x/src/draai/draai/__init__.py"), "source")
+        self.assertEqual(install_kind(), "source")   # this test run
+
+    def test_install_autostart_defers_to_brew(self):
+        import io, contextlib
+        from draai import install
+        home = tempfile.mkdtemp()
+        old_home, old_kind = os.environ.get("HOME"), install.install_kind
+        os.environ["HOME"] = home
+        install.install_kind = lambda path=None: "homebrew"
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                install.install_autostart()
+            self.assertIn("brew services start draai", out.getvalue())
+            self.assertFalse(os.path.exists(os.path.join(
+                home, "Library", "LaunchAgents", "com.draai.player.plist")))
+        finally:
+            install.install_kind = old_kind
+            os.environ["HOME"] = old_home
+            shutil.rmtree(home, ignore_errors=True)
 
     def test_remote_page_served(self):
         httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
