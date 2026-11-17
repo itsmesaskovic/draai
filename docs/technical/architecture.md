@@ -98,7 +98,7 @@ likely be deleted; see [Gotchas](#gotchas).
 distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
 `.pyz`.
 
-`main()` flow (`draai/__main__.py:18-78`):
+`main()` flow (`draai/__main__.py:18-84`):
 1. `--version` → print `APP_NAME __version__` and return (`:19-21`).
 2. `--install-autostart` / `--uninstall-autostart` → run and return
    (`:22-27`).
@@ -114,13 +114,13 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    and `load_trackinfo()` loads `state.trackinfo` from `trackinfo.json`.
 5. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
    `port` in `range(PREFERRED_PORT, PREFERRED_PORT + 20)`
-   (`draai/__main__.py:34-40`); `PREFERRED_PORT` is `8765`
+   (`draai/__main__.py:40-46`); `PREFERRED_PORT` is `8765`
    (`draai/constants.py:4`). First bind that succeeds wins; the chosen
    port is stored in `state.server_port`. If all 20 ports are taken, print
-   an error and `sys.exit(1)` (`:41-43`).
+   an error and `sys.exit(1)` (`:47-49`).
 6. Print the banner (control-panel URL, "keep this window open", the
-   macOS incoming-connections hint, Ctrl+C to quit) — `:44-58`.
-7. Start a **daemon warmup thread** (`draai/__main__.py:61-70`): calls
+   macOS incoming-connections hint, Ctrl+C to quit) — `:50-64`.
+7. Start a **daemon warmup thread** (`draai/__main__.py:67-76`): calls
    `scan_all()` (`draai/library.py:274`) once, then retries
    `refresh_speakers()` (`draai/backends.py:73`) up to 4 times with a
    4-second sleep between attempts, stopping early if speakers are found.
@@ -134,10 +134,10 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    swallows every per-speaker error.
 8. Unless `--headless` is in `sys.argv`, a one-shot `threading.Timer(0.8,
    ...)` opens the control panel in the default browser via
-   `webbrowser.open(url)` (`:72-73`). `--headless` is what the launchd
+   `webbrowser.open(url)` (`:78-79`). `--headless` is what the launchd
    autostart plist passes so login doesn't pop a browser window.
 9. `httpd.serve_forever()`, with `KeyboardInterrupt` caught to print
-   "Bye!" and exit cleanly (`:74-77`).
+   "Bye!" and exit cleanly (`:80-83`).
 
 ### Autostart
 
@@ -257,7 +257,7 @@ they travel with the music, not the app.
 ### Threading model
 
 - The HTTP server is a stdlib `ThreadingHTTPServer`
-  (`draai/__main__.py:36`) — each request is handled on its own thread,
+  (`draai/__main__.py:42`) — each request is handled on its own thread,
   so a slow speaker call (SOAP over the network, `soap_call()` at
   `draai/backends.py:184`, has an 8s `urlopen` timeout) doesn't block
   other API calls.
@@ -277,7 +277,7 @@ they travel with the music, not the app.
   `/api/analysis` requests for the same track don't spawn duplicate
   ffmpeg jobs (`draai/analysis.py:126-135`).
 - Background work is always a `daemon=True` thread so it never blocks
-  process exit: the boot warmup (`draai/__main__.py:69`), per-track
+  process exit: the boot warmup (`draai/__main__.py:75`), per-track
   analysis jobs (`draai/analysis.py:130`), yt-dlp import jobs
   (`draai/importer.py:71`), and the queue-fill-in-background half of
   `play_tracks()` (`draai/backends.py:305`, guarded by
@@ -312,7 +312,7 @@ message instead of raising an import error.
   response header, harmless but a naming fossil from before the DRAAI
   rename, same family as the `SonosMP3Player` config directory name.
 - **The port scan is why "is DRAAI already running?" matters.** Because
-  `main()` silently tries 20 ports in a row (`draai/__main__.py:34-40`),
+  `main()` silently tries 20 ports in a row (`draai/__main__.py:40-46`),
   a second instance doesn't fail loudly — it just binds the next free
   port and prints a different URL in its own banner. There is no
   cross-instance lock file.
@@ -335,7 +335,7 @@ message instead of raising an import error.
 ## References
 
 - `draai/__init__.py:1` — `__version__`.
-- `draai/__main__.py:18-78` — `main()`: flags, port scan, banner, warmup
+- `draai/__main__.py:18-84` — `main()`: flags, port scan, banner, warmup
   thread, `--headless`, browser open.
 - `draai/install.py:17` — `install_kind()`.
 - `draai/install.py:27` — `_launch_args()`.
