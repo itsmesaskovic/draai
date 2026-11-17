@@ -477,6 +477,39 @@ class DraaiTests(unittest.TestCase):
             os.environ["HOME"] = old_home
             shutil.rmtree(home, ignore_errors=True)
 
+    def test_running_engine_detection(self):
+        """`draai` with DRAAI already running opens that one instead of
+        starting a second engine on the next port."""
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from draai.install import running_engine
+
+        def serve(body):
+            class H(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    data = json.dumps(body).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                def log_message(self, *a):
+                    pass
+            srv = HTTPServer(("127.0.0.1", 0), H)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            return srv
+
+        draai_srv = serve({"version": "9.9.9", "speakers": []})
+        other_srv = serve({"hello": "world"})
+        try:
+            dp, op = draai_srv.server_address[1], other_srv.server_address[1]
+            self.assertEqual(running_engine([dp]), "http://localhost:%d" % dp)
+            self.assertIsNone(running_engine([op]))
+            self.assertEqual(running_engine([op, dp]), "http://localhost:%d" % dp)
+        finally:
+            draai_srv.shutdown()
+            other_srv.shutdown()
+        self.assertIsNone(running_engine([dp]))   # nothing listening any more
+
     def test_remote_page_served(self):
         httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
         port = httpd.server_address[1]

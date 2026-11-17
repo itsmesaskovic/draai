@@ -117,6 +117,14 @@ open http://localhost:8765
 After that it's just `draai`: update with `brew upgrade draai`. ffmpeg comes along
 for the visuals.
 
+**Make it an app.** Open http://localhost:8765 once in Chrome, then choose
+⋮ → **Cast, save and share → Install page as app…** (in Safari: **File → Add
+to Dock**). From then on DRAAI sits in your Dock and Spotlight like any other
+app. Typing `draai` in Terminal also opens it, and never starts a second copy.
+
+**Have [Herd](https://herd.laravel.com)?** Give DRAAI a proper local address:
+`herd proxy draai http://127.0.0.1:8765 --secure`, then open https://draai.test.
+
 **Without Homebrew:**
 
 1. Click the green **Code** button → **Download ZIP**, and unpack it

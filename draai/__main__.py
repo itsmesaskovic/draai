@@ -11,7 +11,7 @@ from draai.config import load_config
 from draai.library import scan_all
 from draai.backends import load_positions, refresh_speakers
 from draai.server import Handler
-from draai.install import install_autostart, uninstall_autostart
+from draai.install import install_autostart, running_engine, uninstall_autostart
 from draai.listening import load_listening, load_trackinfo, start_watcher
 
 
@@ -25,6 +25,12 @@ def main():
     if "--uninstall-autostart" in sys.argv:
         uninstall_autostart()
         return
+    if "--headless" not in sys.argv:
+        running = running_engine()
+        if running:
+            print("DRAAI is already running. Opening %s" % running)
+            webbrowser.open(running)
+            return
     load_config()
     load_positions()
     load_listening()

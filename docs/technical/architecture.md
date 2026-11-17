@@ -102,20 +102,25 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
 1. `--version` → print `APP_NAME __version__` and return (`:19-21`).
 2. `--install-autostart` / `--uninstall-autostart` → run and return
    (`:22-27`).
-3. `load_config()` (`draai/config.py:9`) then `load_positions()`
+3. Unless `--headless`: `running_engine()` (`draai/install.py`) probes
+   `127.0.0.1:8765..8784/api/state`; if a DRAAI engine answers, it opens
+   that URL in the browser and exits, so `draai` never starts a second copy.
+   Headless runs (launchd, `brew services`) skip this, since a keep-alive
+   service that exits would be restarted in a loop.
+4. `load_config()` (`draai/config.py:9`) then `load_positions()`
    (`draai/backends.py:309`) — populate `state.config` and
    `state.positions` from disk before the server exists. `load_listening()`
    (`draai/listening.py`) then loads `state.listening` from `listening.json`,
    and `load_trackinfo()` loads `state.trackinfo` from `trackinfo.json`.
-4. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
+5. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
    `port` in `range(PREFERRED_PORT, PREFERRED_PORT + 20)`
    (`draai/__main__.py:34-40`); `PREFERRED_PORT` is `8765`
    (`draai/constants.py:4`). First bind that succeeds wins; the chosen
    port is stored in `state.server_port`. If all 20 ports are taken, print
    an error and `sys.exit(1)` (`:41-43`).
-5. Print the banner (control-panel URL, "keep this window open", the
+6. Print the banner (control-panel URL, "keep this window open", the
    macOS incoming-connections hint, Ctrl+C to quit) — `:44-58`.
-6. Start a **daemon warmup thread** (`draai/__main__.py:61-70`): calls
+7. Start a **daemon warmup thread** (`draai/__main__.py:61-70`): calls
    `scan_all()` (`draai/library.py:274`) once, then retries
    `refresh_speakers()` (`draai/backends.py:73`) up to 4 times with a
    4-second sleep between attempts, stopping early if speakers are found.
@@ -127,11 +132,11 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    browser open. It skips a group the UI polled in the last half interval,
    skips Cast devices with no live DRAAI session (it never opens one), and
    swallows every per-speaker error.
-7. Unless `--headless` is in `sys.argv`, a one-shot `threading.Timer(0.8,
+8. Unless `--headless` is in `sys.argv`, a one-shot `threading.Timer(0.8,
    ...)` opens the control panel in the default browser via
    `webbrowser.open(url)` (`:72-73`). `--headless` is what the launchd
    autostart plist passes so login doesn't pop a browser window.
-8. `httpd.serve_forever()`, with `KeyboardInterrupt` caught to print
+9. `httpd.serve_forever()`, with `KeyboardInterrupt` caught to print
    "Bye!" and exit cleanly (`:74-77`).
 
 ### Autostart

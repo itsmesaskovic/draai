@@ -5,9 +5,11 @@ Leaf module (stdlib + constants only). A Homebrew install lives under
 (`brew services`) and updates (`brew upgrade`), so we hand off to it
 instead of writing our own LaunchAgent.
 """
+import json
 import os
 import subprocess
 import sys
+import urllib.request
 
 from draai.constants import PREFERRED_PORT
 
@@ -22,6 +24,21 @@ def install_kind(path=None):
     if ".pyz/" in p:
         return "pyz"
     return "source"
+
+
+def running_engine(ports=None, timeout=0.5):
+    """URL of a DRAAI engine already running on this Mac, or None.
+    Only counts a server whose /api/state looks like DRAAI's."""
+    for port in ports or range(PREFERRED_PORT, PREFERRED_PORT + 20):
+        try:
+            with urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/state" % port, timeout=timeout) as r:
+                d = json.load(r)
+        except Exception:
+            continue
+        if isinstance(d, dict) and "version" in d and "speakers" in d:
+            return "http://localhost:%d" % port
+    return None
 
 
 def _launch_args():
