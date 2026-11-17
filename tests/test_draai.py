@@ -510,6 +510,34 @@ class DraaiTests(unittest.TestCase):
             other_srv.shutdown()
         self.assertIsNone(running_engine([dp]))   # nothing listening any more
 
+    def test_manifest_and_icons_served(self):
+        """Chrome's 'Install DRAAI' needs a manifest with real PNG icons."""
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            def get(p):
+                with urllib.request.urlopen(
+                        "http://127.0.0.1:%d%s" % (port, p), timeout=10) as r:
+                    return r.headers.get("Content-Type"), r.read()
+            ctype, body = get("/manifest.webmanifest")
+            self.assertEqual(ctype, "application/manifest+json")
+            m = json.loads(body)
+            self.assertEqual(m["name"], "DRAAI")
+            self.assertEqual(m["display"], "standalone")
+            for icon in m["icons"]:
+                ctype, png = get(icon["src"])
+                self.assertEqual(ctype, "image/png")
+                self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+                w, h = struct.unpack(">II", png[16:24])
+                self.assertEqual("%dx%d" % (w, h), icon["sizes"])
+            with self.assertRaises(urllib.error.HTTPError):
+                get("/icon-64.png")
+            ui = sp._load_ui()
+            self.assertIn('rel="manifest" href="/manifest.webmanifest"', ui)
+        finally:
+            httpd.shutdown()
+
     def test_remote_page_served(self):
         httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
         port = httpd.server_address[1]
@@ -1623,8 +1651,17 @@ class DraaiTests(unittest.TestCase):
         ui = assemble_ui(os.path.join(ROOT, "ui"))
         # nothing is loaded over TLS from a remote host, and no external-asset patterns
         self.assertNotIn("https://", ui)
-        for pat in ("@import", "<link", "<script src", "url(http", 'src="http', "src='http"):
+        for pat in ("@import", "<script src", "url(http", 'src="http', "src='http"):
             self.assertNotIn(pat, ui, "external-resource pattern %r found in UI" % pat)
+        # <link> only for the app manifest and icons, served by the local engine
+        for tag in re.findall(r"<link\b[^>]*>", ui):
+            rel = re.search(r'rel="([^"]+)"', tag)
+            href = re.search(r'href="([^"]+)"', tag)
+            self.assertTrue(rel and rel.group(1) in ("manifest", "icon", "apple-touch-icon"),
+                            "unexpected <link> in UI: %r" % tag)
+            self.assertTrue(href and href.group(1).startswith("/")
+                            and not href.group(1).startswith("//"),
+                            "<link> to a non-local URL: %r" % tag)
         # every fetch() targets a relative URL (the local engine), never an absolute host
         for target in re.findall(r"""fetch\(\s*[`"']([^`"']*)""", ui):
             self.assertTrue(target.startswith("/") or target.startswith("."),

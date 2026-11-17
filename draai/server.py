@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler
 
 from draai import __version__, state
 from draai.install import install_kind
+from draai.icon import SIZES as ICON_SIZES, app_icon_png, manifest
 from draai.constants import AUDIO_EXTS
 from draai.state import (config, positions, positions_lock, speakers, state_lock, tracks,
                          tracks_by_id, yt_jobs)
@@ -386,6 +387,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif path == "/manifest.webmanifest":
+            data = json.dumps(manifest()).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/manifest+json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif path in ["/icon-%d.png" % n for n in ICON_SIZES]:
+            data = app_icon_png(int(path[6:-4]))
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
             self.wfile.write(data)
         elif path == "/favicon.ico":

@@ -20,6 +20,7 @@ Module map (all under `draai/`), one line each:
 |---|---|
 | `draai/__init__.py:1` | Package root; holds `__version__` only. |
 | `draai/__main__.py` | CLI entry point: flag handling, port scan, banner, warmup thread. |
+| `draai/icon.py` | Leaf module: the app icon as a stdlib-drawn PNG (`app_icon_png`) and the web app `manifest()`. |
 | `draai/install.py` | Leaf-ish module (stdlib + `constants`): `install_kind()` (`homebrew` / `pyz` / `source`, from the package's real path) and autostart install/uninstall. |
 | `draai/constants.py` | Leaf module: app name, port, audio extensions, storage paths, queue/resume tuning constants. |
 | `draai/state.py` | Leaf module: shared mutable runtime state (`tracks`, `speakers`, `config`, locks, caches) — see `draai/state.py:1`. |
