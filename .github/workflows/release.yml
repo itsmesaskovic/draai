@@ -56,6 +56,9 @@ jobs:
           git clone -q "https://x-access-token:$TAP_TOKEN@github.com/itsmesaskovic/homebrew-draai.git" tap
           cd tap
           sed -i -E "s|releases/download/v[^/]+/draai.pyz|releases/download/$TAG/draai.pyz|; s|^  sha256 \"[0-9a-f]+\"|  sha256 \"$SHA\"|" Formula/draai.rb
+          # drop the previous version's bottle; the tap's CI bottles the new one
+          sed -i -E '/^  bottle do$/,/^  end$/d' Formula/draai.rb
+          cat -s Formula/draai.rb > formula.tmp && mv formula.tmp Formula/draai.rb
           git diff --stat
           if git diff --quiet; then echo "formula already at $TAG"; exit 0; fi
           git config user.name "github-actions[bot]"
