@@ -109,7 +109,8 @@ worked out of the box.
 **Using Homebrew?** That's the easiest way to install and keep it current:
 
 ```
-brew install itsmesaskovic/draai/draai
+brew tap itsmesaskovic/draai
+brew install draai
 brew services start draai      # runs in the background, starts at login
 open http://localhost:8765
 ```
