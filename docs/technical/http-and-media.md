@@ -103,7 +103,8 @@ GET endpoints (`draai/server.py:312-482`):
 | `/api/browse` | 438 | Filesystem directory listing, for the folder picker |
 | `/api/playlists` | 468 | List saved M3U playlists |
 | `/api/prefs` | 470 | GET UI prefs (theme/group/sort/...) persisted server-side |
-| `/api/yt_available` | 472 | Whether yt-dlp/ffmpeg are installed |
+| `/api/yt_available` | 472 | Whether yt-dlp/ffmpeg are installed: `{available, missing, can_install}` (`can_install` = something missing and Homebrew found) |
+| `/api/install_status` | — | The one tool-install job: `{status: idle\|working\|done\|error, tools, error}` |
 | `/api/yt_status` | 474 | Poll a running yt-dlp import job |
 
 POST endpoints (`draai/server.py:493-695`), each returns JSON, wrapped by
@@ -125,6 +126,7 @@ the `try/except` described above:
 | `/api/playlist_delete` | 600 | Delete a saved playlist |
 | `/api/prefs` | 603 | POST — merge/save UI prefs (`null` value deletes a key) |
 | `/api/reveal` | 612 | Reveal a library file in Finder (path-guarded to library roots) |
+| `/api/install_tools` | — | Runs `brew install <missing tools>` in the background, returns the job. Loopback-only (same guard as delete). See `security-and-privacy.md` |
 | `/api/delete` | — | **Permanently** delete library files: body `{"ids": [...]}` (1-500), returns `{"deleted": n, "failed": [{id, title, error}]}`. Loopback-only: `deletion.delete_allowed` checks the peer IP, `Host`, `Origin` and `Content-Type` *before* the body is read and answers 403 otherwise. Each id is refused if unknown, currently playing, or its realpath is outside the configured folders. See `security-and-privacy.md` |
 | `/api/eq` | 615 | Set bass/treble/loudness on a speaker |
 | `/api/group` | 623 | Join one speaker into another's group |

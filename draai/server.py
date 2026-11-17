@@ -18,7 +18,8 @@ from draai.config import save_config
 from draai.media import local_ip_facing
 from draai.library import get_art, scan_all, scan_folder
 from draai.analysis import get_analysis, prefetch_analysis
-from draai.importer import YT_URL_RE, start_import_job, yt_available
+from draai.importer import (YT_URL_RE, install_status, start_import_job,
+                            start_tool_install, yt_available)
 from draai.playlists import delete_playlist, list_playlists, load_playlist, save_playlist
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
@@ -602,6 +603,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"cars": list_cars(), "traffic": list_traffic()})
         elif path == "/api/yt_available":
             self.send_json(yt_available())
+        elif path == "/api/install_status":
+            self.send_json(install_status())
         elif path.startswith("/api/yt_status"):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             job = yt_jobs.get(qs.get("id", [""])[0])
@@ -630,6 +633,12 @@ class Handler(BaseHTTPRequestHandler):
             if err:
                 self.close_connection = True
                 self.send_json({"error": err}, 403)
+                return
+        if path == "/api/install_tools":
+            # installs software: only from DRAAI on this Mac, like delete
+            if delete_allowed(self.client_address[0], self.headers, state.server_port):
+                self.close_connection = True
+                self.send_json({"error": "Installing only works in DRAAI on this Mac."}, 403)
                 return
         body = self.read_json()
         try:
@@ -748,6 +757,11 @@ class Handler(BaseHTTPRequestHandler):
                         ui[k] = v
                 save_config()
                 self.send_json(ui)
+            elif path == "/api/install_tools":
+                try:
+                    self.send_json(start_tool_install())
+                except RuntimeError as e:
+                    self.send_json({"error": str(e)}, 400)
             elif path == "/api/delete":
                 ids = body.get("ids")
                 if not isinstance(ids, list) or not ids:

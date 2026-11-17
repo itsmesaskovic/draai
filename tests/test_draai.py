@@ -538,6 +538,80 @@ class DraaiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
+    def test_tool_install_runs_brew_for_missing_tools(self):
+        """'Install yt-dlp' in the UI runs `brew install` for exactly the
+        missing tools, without Homebrew's cleanup (it could remove the Python
+        the running engine uses), and reports done once they are found."""
+        imp = draai.importer
+        installed = {"ffmpeg"}
+        calls = []
+
+        def fake_find(name):
+            if name == "brew":
+                return "/opt/homebrew/bin/brew"
+            return "/opt/homebrew/bin/" + name if name in installed else None
+
+        def fake_run(cmd, **kw):
+            calls.append((cmd, kw.get("env", {})))
+            installed.update(cmd[2:])
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        old_find, old_run = imp.find_tool, imp.subprocess.run
+        imp.find_tool, imp.subprocess.run = fake_find, fake_run
+        try:
+            y = imp.yt_available()
+            self.assertEqual(y["missing"], ["yt-dlp"])
+            self.assertTrue(y["can_install"])
+            job = imp.start_tool_install()
+            for _ in range(100):
+                if imp.install_status()["status"] != "working":
+                    break
+                time.sleep(0.02)
+            self.assertEqual(imp.install_status()["status"], "done")
+            self.assertEqual(calls[0][0], ["/opt/homebrew/bin/brew", "install", "yt-dlp"])
+            self.assertEqual(calls[0][1].get("HOMEBREW_NO_INSTALL_CLEANUP"), "1")
+            self.assertTrue(imp.yt_available()["available"])
+            self.assertIn(job["status"], ("working", "done"))
+        finally:
+            imp.find_tool, imp.subprocess.run = old_find, old_run
+
+    def test_tool_install_failure_is_a_sentence(self):
+        imp = draai.importer
+        old_find, old_run = imp.find_tool, imp.subprocess.run
+        imp.find_tool = lambda n: "/opt/homebrew/bin/brew" if n == "brew" else None
+        imp.subprocess.run = lambda cmd, **kw: types.SimpleNamespace(
+            returncode=1, stdout="", stderr="Error: something broke\n")
+        try:
+            imp.start_tool_install()
+            for _ in range(100):
+                if imp.install_status()["status"] != "working":
+                    break
+                time.sleep(0.02)
+            st = imp.install_status()
+            self.assertEqual(st["status"], "error")
+            self.assertIn("brew install", st["error"])
+            self.assertNotIn("Traceback", st["error"])
+            imp.find_tool = lambda n: None          # no Homebrew at all
+            with self.assertRaises(RuntimeError):
+                imp.start_tool_install()
+        finally:
+            imp.find_tool, imp.subprocess.run = old_find, old_run
+
+    def test_tool_install_only_from_this_mac(self):
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            req = urllib.request.Request(
+                "http://127.0.0.1:%d/api/install_tools" % port, data=b"{}",
+                headers={"Content-Type": "application/json", "Host": "draai.test"})
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req, timeout=5)
+            self.assertEqual(cm.exception.code, 403)
+            self.assertIn("on this Mac", json.load(cm.exception)["error"])
+        finally:
+            httpd.shutdown()
+
     def test_remote_page_served(self):
         httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
         port = httpd.server_address[1]

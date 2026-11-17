@@ -24,7 +24,62 @@ YT_TIMEOUT = 3600
 
 def yt_available():
     missing = [n for n in ("yt-dlp", "ffmpeg") if not find_tool(n)]
-    return {"available": not missing, "missing": missing}
+    return {"available": not missing, "missing": missing,
+            "can_install": bool(missing) and bool(find_tool("brew"))}
+
+
+# "Install yt-dlp" in the UI: one Homebrew run at a time, for exactly the
+# missing tools. The user clicks for it; nothing installs on its own.
+INSTALL_TIMEOUT = 1800
+_install_lock = threading.Lock()
+_install_job = {"status": "idle", "tools": [], "error": ""}
+
+
+def install_status():
+    with _install_lock:
+        return dict(_install_job)
+
+
+def start_tool_install():
+    """Start `brew install <missing tools>` in the background; returns the job.
+    Raises RuntimeError (a human sentence) when Homebrew isn't there."""
+    missing = yt_available()["missing"]
+    brew = find_tool("brew")
+    with _install_lock:
+        if _install_job["status"] == "working":
+            return dict(_install_job)
+        if not missing:
+            _install_job.update(status="done", tools=[], error="")
+            return dict(_install_job)
+        if not brew:
+            raise RuntimeError("Installing needs Homebrew. In Terminal run:  "
+                               "brew install " + " ".join(missing))
+        _install_job.update(status="working", tools=missing, error="")
+
+    def run():
+        env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1",
+                   HOMEBREW_NO_ENV_HINTS="1",
+                   # cleanup could delete the Python this engine runs on
+                   HOMEBREW_NO_INSTALL_CLEANUP="1")
+        ok = False
+        try:
+            p = subprocess.run([brew, "install"] + missing, capture_output=True,
+                               text=True, env=env, timeout=INSTALL_TIMEOUT)
+            ok = p.returncode == 0 and yt_available()["available"]
+        except Exception:
+            ok = False
+        with _install_lock:
+            if ok:
+                _install_job.update(status="done", error="")
+            else:
+                _install_job.update(
+                    status="error",
+                    error="Homebrew couldn't install " + " and ".join(missing)
+                    + ". In Terminal run  brew install " + " ".join(missing)
+                    + "  to see what went wrong.")
+
+    threading.Thread(target=run, daemon=True).start()
+    return install_status()
 
 
 def start_import_job(url):

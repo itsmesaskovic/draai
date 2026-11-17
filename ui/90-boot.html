@@ -278,6 +278,38 @@ async function pollYt(job){ try{ const s=await api("/api/yt_status?id="+enc(job)
   setTimeout(()=>pollYt(job),1500);
 }catch(e){ setTimeout(()=>pollYt(job),2000); } }
 
+/* ---------------- yt-dlp setup ----------------
+   Without yt-dlp the section asks first: what it's for, how to use it within
+   the rules, and an Install button that runs Homebrew. Nothing installs on its
+   own; the button only appears in DRAAI on this Mac (the engine enforces that). */
+async function loadYt(){ try{ renderYt(await api("/api/yt_available")); }catch(e){ $("#ytSection").classList.add("hidden"); } }
+function renderYt(y){
+  const ready=!!y.available, box=$("#ytSetup");
+  $("#ytRow").classList.toggle("hidden",!ready); $("#ytJobs").classList.toggle("hidden",!ready);
+  box.classList.toggle("hidden",ready); if(ready){ box.innerHTML=""; return; }
+  const cmd="brew install "+(y.missing&&y.missing.length?y.missing:["yt-dlp"]).join(" ");
+  if(A.ytNo && !A.ytOpen){
+    box.innerHTML=`<button class="ytmore" id="ytMore">Import from links needs yt-dlp. <u>Tell me more</u></button>`;
+    $("#ytMore").onclick=()=>{ A.ytOpen=true; renderYt(y); }; return; }
+  const canInstall=y.can_install && isLocalHost();
+  box.innerHTML=`<p>With yt-dlp, DRAAI can save the audio from a link into your library, like a DJ set or a live recording, and show its video in the full-screen view.</p>
+<p class="fine">Only use it for things you're allowed to download: your own uploads, Creative Commons material, or recordings the maker offers for download. Respect the website's terms.</p>
+${canInstall?"":`<p class="fine">To add it, run this in Terminal: <span class="mono">${esc(cmd)}</span></p>`}
+<div class="minirow">${canInstall?`<button class="btn acc" id="ytInstall" title="Runs: ${esc(cmd)}">Install yt-dlp</button>`:""}${A.ytNo?"":`<button class="btn" id="ytNo">No thanks</button>`}</div>`;
+  const no=$("#ytNo"); if(no) no.onclick=()=>{ A.ytNo=true; A.ytOpen=false; savePrefs(); renderYt(y); };
+  const ins=$("#ytInstall"); if(ins) ins.onclick=()=>guard(async()=>{ await api("/api/install_tools",{}); ytInstalling(y); });
+  api("/api/install_status").then(s=>{ if(s.status==="working") ytInstalling(y); }).catch(()=>{});
+}
+function ytInstalling(y){
+  $("#ytSetup").innerHTML=`<p><span class="spin"></span> Installing yt-dlp with Homebrew. This can take a minute or two.</p>`;
+  const poll=async()=>{ let s; try{ s=await api("/api/install_status"); }catch(e){ setTimeout(poll,3000); return; }
+    if(s.status==="working"){ setTimeout(poll,2000); return; }
+    if(s.status==="done"){ toast("yt-dlp is ready. Paste a link to import.",true); loadYt(); return; }
+    $("#ytSetup").innerHTML=`<p class="fine">${esc(s.error||"Installing didn't work.")}</p><div class="minirow"><button class="btn" id="ytRetry">Try again</button></div>`;
+    $("#ytRetry").onclick=()=>renderYt(y); };
+  setTimeout(poll,2000);
+}
+
 /* ---------------- QR / access ---------------- */
 async function loadAccess(){ try{ const a=await api("/api/access"); A.accessUrl=a.remote||a.url||""; }catch(e){ A.accessUrl=""; }
   const box=$("#qrBox");
@@ -551,7 +583,7 @@ async function boot(){
       if(A.speakers.length&&A.speaker){selectRoom(A.speaker.uuid);}
     },2500);
   }
-  try{ const y=await api("/api/yt_available"); if(!y.available){ $("#ytSection").classList.add("hidden"); if(y.missing&&y.missing.length) toast("yt-dlp import available after: brew install "+y.missing.join(", "),true); } }catch(e){ $("#ytSection").classList.add("hidden"); }
+  loadYt();
   await refreshTracks();
   loadAccess();
   if(A.speaker){ startPolling(); loadEq(); loadRoomVolumes(); }
@@ -837,7 +869,7 @@ $("#themeBtn").addEventListener("click",()=>{
 let prefsTimer=null;
 function savePrefs(){
   clearTimeout(prefsTimer);
-  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,npViz:A.npViz,npVidOff:A.npVidOff,npSplit:A.npSplit,collapsed:[...A.collapsed]}).catch(()=>{}); },400);
+  prefsTimer=setTimeout(()=>{ if(!DEMO)api("/api/prefs",{theme:A.theme,group:A.group,sort:A.sort,dir:A.dir,driveCar:A.driveCar,npViz:A.npViz,npVidOff:A.npVidOff,npSplit:A.npSplit,collapsed:[...A.collapsed],ytNo:A.ytNo||null}).catch(()=>{}); },400);
 }
 async function loadPrefs(){
   try{ const p=await api("/api/prefs");
@@ -850,6 +882,7 @@ async function loadPrefs(){
     if(typeof p.npVidOff==="number"&&isFinite(p.npVidOff))A.npVidOff=clamp(p.npVidOff,-1,1);
     if(typeof p.npSplit==="number"&&isFinite(p.npSplit))A.npSplit=clamp(p.npSplit,0.25,0.75);
     if(Array.isArray(p.collapsed))A.collapsed=new Set(p.collapsed);
+    if(p.ytNo===true)A.ytNo=true;
   }catch(e){}
   applyTheme(); applyNpViz(); applyNpVidOff(); applyNpSplit();
 }

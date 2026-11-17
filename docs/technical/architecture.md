@@ -167,7 +167,7 @@ the sidebar footer's version line tells Homebrew users how to update.
 The tap is the separate repo `itsmesaskovic/homebrew-draai`
 (`Formula/draai.rb`). The formula installs the release's `draai.pyz` into
 `libexec`, writes a `bin/draai` wrapper that runs it on Homebrew's
-`python@3.14`, recommends `ffmpeg`, offers `yt-dlp` as `--with-yt-dlp`, and
+`python@3.14`, recommends `ffmpeg` (yt-dlp is offered in the UI instead), and
 defines a `service` (`draai --headless`, keep-alive, log in
 `$(brew --prefix)/var/log/draai.log`). The tap's own CI audits, installs,
 tests and starts the service on macOS.

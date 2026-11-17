@@ -288,9 +288,11 @@ Installed with Homebrew? Use `brew services start draai` instead.
 ### yt-dlp integration (optional, read this)
 
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) is a separate, widely used
-open-source media downloader. This project does not include, bundle, or
-download it — but if you have installed it yourself
-(`brew install yt-dlp ffmpeg`), the app shows an import box: paste a link,
+open-source media downloader. This project does not include or bundle it.
+Without it, DRAAI's sidebar explains what it's for and offers **Install
+yt-dlp**, which runs `brew install yt-dlp` with your own Homebrew, only when
+you click it and only in DRAAI on the Mac itself. Or install it yourself
+(`brew install yt-dlp ffmpeg`). Once it's there, the app shows an import box: paste a link,
 and yt-dlp saves the audio — with title, artist and cover art embedded —
 into an `Imported` subfolder of your first library folder
 (e.g. `~/Music/Imported/`). The library rescans automatically.

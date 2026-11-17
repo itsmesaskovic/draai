@@ -147,6 +147,18 @@ that can't be reached is skipped, so a set playing on it can still be deleted.
 And the inside-the-folders check is only as narrow as your folders: a library
 folder of `/` or `~` makes everything under it deletable.
 
+**Installing yt-dlp is local-only too.** Without yt-dlp the sidebar offers
+"Install yt-dlp". `POST /api/install_tools` runs `brew install` for exactly
+the missing tools (yt-dlp, and ffmpeg if absent), in the background, behind
+the same `delete_allowed()` guard (403 "Installing only works in DRAAI on this
+Mac."). The UI only shows the button on a loopback host. Homebrew downloads
+from the internet; that happens only on this click. It runs with
+`HOMEBREW_NO_AUTO_UPDATE`, and with `HOMEBREW_NO_INSTALL_CLEANUP` so an upgraded
+dependency can't remove the Python the running engine uses. Without Homebrew
+the card shows the command instead. One side effect of the Host check: behind
+a proxy such as Herd's `https://draai.test`, Delete and Install refuse (Host is
+not loopback); use `http://localhost:8765` for those.
+
 ## Threat model
 
 **What this design defends against:** your listening habits, library contents,
