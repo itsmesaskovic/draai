@@ -6,7 +6,7 @@ import subprocess
 import sys
 import urllib.parse
 import urllib.request
-from http.server import BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from draai import __version__, state
 from draai.install import install_kind
@@ -335,6 +335,15 @@ def qr_svg(text, module=8, border=4):
                                 module, module))
     parts.append("</svg>")
     return "".join(parts)
+
+
+class DraaiServer(ThreadingHTTPServer):
+    """The engine's HTTP server. A deeper accept queue than the stdlib's 5:
+    behind an HTTP/2 proxy (e.g. Herd's https://draai.test) the browser's
+    burst of artwork requests arrives as dozens of simultaneous upstream
+    connections, and a full queue turns them into 502s."""
+    request_queue_size = 128
+    daemon_threads = True
 
 
 class Handler(BaseHTTPRequestHandler):

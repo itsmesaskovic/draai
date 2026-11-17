@@ -113,7 +113,7 @@ distinguishes the two at runtime by checking whether `sys.argv[0]` ends in
    `state.positions` from disk before the server exists. `load_listening()`
    (`draai/listening.py`) then loads `state.listening` from `listening.json`,
    and `load_trackinfo()` loads `state.trackinfo` from `trackinfo.json`.
-5. Port scan: try `ThreadingHTTPServer(("0.0.0.0", port), Handler)` for
+5. Port scan: try `DraaiServer(("0.0.0.0", port), Handler)` (a `ThreadingHTTPServer` with an accept queue of 128 instead of 5, so a proxy's burst of connections doesn't turn into 502s) for
    `port` in `range(PREFERRED_PORT, PREFERRED_PORT + 20)`
    (`draai/__main__.py:40-46`); `PREFERRED_PORT` is `8765`
    (`draai/constants.py:4`). First bind that succeeds wins; the chosen

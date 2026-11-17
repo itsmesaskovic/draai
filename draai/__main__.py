@@ -3,14 +3,13 @@ import sys
 import threading
 import time
 import webbrowser
-from http.server import ThreadingHTTPServer
 
 from draai import __version__, state
 from draai.constants import APP_NAME, PREFERRED_PORT
 from draai.config import load_config
 from draai.library import scan_all
 from draai.backends import load_positions, refresh_speakers
-from draai.server import Handler
+from draai.server import DraaiServer, Handler
 from draai.install import install_autostart, running_engine, uninstall_autostart
 from draai.listening import load_listening, load_trackinfo, start_watcher
 
@@ -39,7 +38,7 @@ def main():
     httpd = None
     for port in range(PREFERRED_PORT, PREFERRED_PORT + 20):
         try:
-            httpd = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+            httpd = DraaiServer(("0.0.0.0", port), Handler)
             state.server_port = port
             break
         except OSError:
