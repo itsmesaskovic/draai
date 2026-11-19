@@ -38,8 +38,11 @@ function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.sta
   if(!knobDrag){ setKnob($("#knobVol"),A.status.volume,0,100); $("#volVal").textContent=A.status.volume; }
   // resolve current track id from the ids WE queued, else title match
   const qno=(A.status.track_no||1)-1;
-  // trust the local queue mirror only when it agrees with the speaker's queue
-  let cid=(A.queue.length===0||A.queueIds.length===A.queue.length)?A.queueIds[qno]:null;
+  // the engine reads our track id from the speaker's playing URI: that wins. Titles can
+  // drift (a file retagged after it was queued), so they are only a fallback.
+  let cid=A.status.track_id||null;
+  // else trust the local queue mirror only when it agrees with the speaker's queue
+  if(cid==null) cid=(A.queue.length===0||A.queueIds.length===A.queue.length)?A.queueIds[qno]:null;
   if(cid==null&&A.queue.length){
     const it=A.queue[qno];
     if(it){
