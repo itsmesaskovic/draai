@@ -24,3 +24,8 @@
   .nphead,.npfoot{padding:16px 20px}
 }
 .reduce *,.reduce *::before,.reduce *::after{animation:none!important;transition:background 1.4s linear,color .2s,opacity .3s,transform .2s!important}
+/* touchscreens of any width: no hover, so keep queue buttons visible */
+@media(hover:none){
+  .row .acts{opacity:1;pointer-events:auto}
+  .cov .hq{opacity:1;transform:none;right:12px;bottom:12px}
+}

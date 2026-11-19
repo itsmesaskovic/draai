@@ -197,7 +197,7 @@ function renderHome(c){
   if(most.length) out+=shelf("Most played",`<div class="rows">${most.map((t,i)=>homeRow(t,i+1,fmtListened(t.listened))).join("")}</div>`);
   if(recent.length) out+=shelf("Recently added",`<div class="htiles">${recent.map(t=>{
     const img=(t.has_art===false)?"":`<img loading="lazy" src="${DEMO?Demo.art(t.id):"/api/art?id="+enc(t.id)}" onerror="this.remove()" alt="">`;
-    return `<div class="htile" data-play="${t.id}" title="${esc(t.title)}"><div class="cov" style="background:${gradFor((t.album||"")+"§"+(t.artist||t.title))}">${img}<div class="ply"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
+    return `<div class="htile" data-play="${t.id}" title="${esc(t.title)}"><div class="cov" style="background:${gradFor((t.album||"")+"§"+(t.artist||t.title))}">${img}<button class="hq" data-enqueue="${t.id}" title="Add to queue · ⌥ Play next" aria-label="Add to queue"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h13M3 12h9M3 18h9M17 12v6M14 15h6"/></svg></button><div class="ply"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
       <div class="nm">${esc(t.title)}</div><div class="ar">${esc(t.artist||"")}</div></div>`; }).join("")}</div>`);
   c.innerHTML=`<div class="listwrap"><div class="listhead"><div><h2>Home</h2></div><span class="sub">${(A.trackCount||A.tracks.length).toLocaleString()} tracks</span></div>${out}</div>`;
 }
