@@ -287,6 +287,57 @@ FAKE_DEVS = [
 ]
 
 
+class FakeProc:
+    """Stand-in for an ffmpeg child. `lines` are fed to the progress reader;
+    with `rc` given it exits straight away, otherwise it runs until finish()
+    or kill()."""
+    def __init__(self, argv, lines=(), rc=None):
+        import queue
+        self.argv = argv
+        self.returncode = None
+        self.killed = False
+        self._q = queue.Queue()
+        for ln in lines:
+            self._q.put(ln)
+        if rc is not None:
+            self.finish(rc)
+        self.stdout = self._iter()
+
+    def _iter(self):
+        while True:
+            ln = self._q.get()
+            if ln is None:
+                return
+            yield ln
+
+    def feed(self, line):
+        self._q.put(line)
+
+    def finish(self, rc):
+        if self.returncode is None:
+            self.returncode = rc
+            self._q.put(None)
+
+    def kill(self):
+        self.killed = True
+        self.finish(-9)
+
+    def wait(self):
+        return self.returncode
+
+    def poll(self):
+        return self.returncode
+
+
+def wait_for(cond, timeout=2.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.01)
+    return cond()
+
+
 class DraaiTests(unittest.TestCase):
 
     def setUp(self):
@@ -298,6 +349,12 @@ class DraaiTests(unittest.TestCase):
         # never touch real CoreAudio / ffmpeg
         draai.local._enumerate_coreaudio = lambda: []
         draai.local._available = lambda: True
+        draai.local.players.clear()
+        sp.config["local_volume"] = {}
+        # config saves go to the temp dir, never the real app-support dir
+        self._cfg_paths = (draai.config.CONFIG_PATH, draai.config.CONFIG_DIR)
+        draai.config.CONFIG_DIR = self.tmp
+        draai.config.CONFIG_PATH = os.path.join(self.tmp, "config.json")
         sp.config["folders"] = [self.tmp]
         sp.config["manual_ips"] = []
         # never let a debounced save reach the real config dir
@@ -305,6 +362,9 @@ class DraaiTests(unittest.TestCase):
         draai.listening._info_path[0] = os.path.join(self.tmp, "trackinfo.json")
 
     def tearDown(self):
+        draai.local.local_shutdown()
+        draai.local.players.clear()
+        draai.config.CONFIG_PATH, draai.config.CONFIG_DIR = self._cfg_paths
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # -- tags -----------------------------------------------------------------
@@ -1791,6 +1851,142 @@ class DraaiTests(unittest.TestCase):
         draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
         draai.local._available = lambda: False
         self.assertEqual(draai.local.local_discover(), [])
+
+    # -- local playback ---------------------------------------------------------
+
+    def _local_setup(self, devs=None, procs_rc=None, n_tracks=2):
+        """Fake enumerator + recording spawner. Returns (spk, ids, spawned)."""
+        draai.local._enumerate_coreaudio = lambda: (devs if devs is not None else FAKE_DEVS)
+        spawned = []
+
+        def fake_spawn(argv):
+            rc = procs_rc(len(spawned)) if procs_rc else None
+            pr = FakeProc(argv, rc=rc)
+            spawned.append(pr)
+            return pr
+        draai.local._spawn = fake_spawn
+        self.addCleanup(setattr, draai.local, "_spawn", draai.local.__dict__["_spawn"])
+        ids = []
+        for i in range(n_tracks):
+            tid = ("%016x" % (0xA0 + i))
+            sp.tracks_by_id[tid] = {"id": tid, "title": "T%d" % i, "ext": ".mp3",
+                                    "path": "/m/t%d.mp3" % i}
+            ids.append(tid)
+        self.addCleanup(lambda: [sp.tracks_by_id.pop(t, None) for t in ids])
+        spk = {"uuid": "MAC_JABRA-OUT", "name": "Jabra Link 370", "ip": None,
+               "backend": "local", "is_group": False}
+        return spk, ids, spawned
+
+    def test_local_build_argv(self):
+        self.assertEqual(
+            draai.local.build_argv("ffmpeg", "/m/a.mp3", 12.5, 30, 2),
+            ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+             "-ss", "12.500", "-i", "/m/a.mp3", "-vn", "-af", "volume=0.300",
+             "-f", "audiotoolbox", "-audio_device_index", "2",
+             "-progress", "pipe:1", "-"])
+
+    def test_local_play_spawns_on_jabra_index(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        self.assertEqual(len(spawned), 1)
+        a = spawned[0].argv
+        self.assertEqual(a[a.index("-audio_device_index") + 1], "2")
+        self.assertIn("/m/t0.mp3", a)
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["state"], st["track_no"]), ("PLAYING", 1))
+
+    def test_local_advance_on_clean_exit(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        spawned[0].finish(0)
+        self.assertTrue(wait_for(lambda: len(spawned) == 2))
+        self.assertIn("/m/t1.mp3", spawned[1].argv)
+        spawned[1].finish(0)
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["state"] == "STOPPED"))
+
+    def test_local_pause_resume_respawns_at_position(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        spawned[0].feed("out_time_us=61000000\n")
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["position"] == "0:01:01"))
+        draai.local.local_cmd(spk, "pause")
+        self.assertTrue(spawned[0].killed)
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["state"], st["position"]), ("PAUSED_PLAYBACK", "0:01:01"))
+        time.sleep(0.05)
+        self.assertEqual(len(spawned), 1)           # our own kill must not advance
+        draai.local.local_cmd(spk, "resume")
+        self.assertEqual(len(spawned), 2)
+        a = spawned[1].argv
+        self.assertEqual(a[a.index("-ss") + 1], "61.000")
+        self.assertIn("/m/t0.mp3", a)
+
+    def test_local_volume_debounced(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        for v in range(40, 50):
+            draai.local.local_set_volume(spk, v)
+        time.sleep(0.45)
+        self.assertEqual(len(spawned), 2)
+        self.assertIn("volume=0.490", spawned[1].argv)
+        self.assertEqual(sp.config["local_volume"]["MAC_JABRA-OUT"], 49)
+
+    def test_local_device_gone_stops_with_sentence(self):
+        devs = [d for d in FAKE_DEVS if d["uid"] != "JABRA-OUT"]
+        spk, ids, spawned = self._local_setup(devs=devs)
+        draai.local.local_play_tracks(spk, ids)
+        st = draai.local.local_get_status(spk)
+        self.assertEqual(spawned, [])
+        self.assertEqual(st["state"], "STOPPED")
+        self.assertEqual(st["error"], "The Jabra Link 370 is no longer connected.")
+
+    def test_local_unplugged_mid_track_stops_once(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        draai.local._enumerate_coreaudio = lambda: [d for d in FAKE_DEVS if d["uid"] != "JABRA-OUT"]
+        spawned[0].finish(1)
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["state"] == "STOPPED"))
+        time.sleep(0.05)
+        self.assertEqual(len(spawned), 1)
+        self.assertEqual(draai.local.local_get_status(spk)["error"],
+                         "The Jabra Link 370 is no longer connected.")
+
+    def test_local_all_failing_tracks_stop(self):
+        spk, ids, spawned = self._local_setup(procs_rc=lambda n: 1)
+        draai.local.local_play_tracks(spk, ids)
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["state"] == "STOPPED"))
+        time.sleep(0.05)
+        self.assertEqual(len(spawned), 2)
+        self.assertEqual(draai.local.local_get_status(spk)["error"],
+                         "Couldn't play that file \u2014 skipped it.")
+
+    def test_local_queue_semantics(self):
+        spk, ids, spawned = self._local_setup(n_tracks=3)
+        a, b, c = ids
+        draai.local.local_play_tracks(spk, [a, b])
+        draai.local.local_enqueue_tracks(spk, [c], play_next=True)
+        self.assertEqual([i["id"] for i in draai.local.local_browse_queue(spk)[0]], [a, c, b])
+        p = draai.local.players["MAC_JABRA-OUT"]
+        draai.local.local_queue_move(spk, 1, 3)             # move the playing track down
+        self.assertEqual((p.ids, p.idx), ([c, b, a], 2))
+        draai.local.local_queue_remove(spk, 1)              # remove before idx
+        self.assertEqual((p.ids, p.idx), ([b, a], 1))
+        self.assertEqual(len(spawned), 1)                   # none of that respawned
+
+    def test_local_resume_saved_position(self):
+        spk, ids, spawned = self._local_setup()
+        with sp.positions_lock:
+            sp.positions[ids[0]] = 600
+        self.addCleanup(sp.positions.clear)
+        draai.local.local_play_tracks(spk, ids)
+        a = spawned[0].argv
+        self.assertEqual(a[a.index("-ss") + 1], "595.000")
+
+    def test_local_shutdown_kills_children(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        draai.local.local_shutdown()
+        self.assertTrue(all(p.killed for p in spawned))
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ def load_config():
         config["folders"] = saved["folders"]
     elif saved.get("folder"):               # migrate old single-folder config
         config["folders"] = [saved["folder"]]
-    for k in ("manual_ips", "last_speaker", "ui"):
+    for k in ("manual_ips", "last_speaker", "ui", "local_volume"):
         if k in saved:
             config[k] = saved[k]
 
