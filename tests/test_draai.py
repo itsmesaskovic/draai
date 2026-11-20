@@ -29,7 +29,7 @@ import types
 import draai
 import draai.state, draai.constants, draai.util, draai.config, draai.media
 import draai.library, draai.analysis, draai.importer, draai.cast
-import draai.backends, draai.playlists, draai.server, draai.listening
+import draai.backends, draai.playlists, draai.server, draai.listening, draai.local
 
 # `sp` = a flat namespace of the package's public API for the tests' sp.<name>
 # reads/calls. Function MOCKS are patched on the real module they live in
@@ -37,7 +37,8 @@ import draai.backends, draai.playlists, draai.server, draai.listening
 sp = types.SimpleNamespace(__version__=draai.__version__)
 for _m in (draai.state, draai.constants, draai.util, draai.config, draai.media,
            draai.library, draai.analysis, draai.importer, draai.cast,
-           draai.backends, draai.playlists, draai.server, draai.listening):
+           draai.backends, draai.playlists, draai.server, draai.listening,
+           draai.local):
     for _n in dir(_m):
         if not _n.startswith("__"):
             setattr(sp, _n, getattr(_m, _n))
@@ -276,6 +277,16 @@ class SoapMock:
         return "<ok/>"
 
 
+FAKE_DEVS = [
+    {"index": 0, "uid": "LG-A", "name": "LG HDR 4K", "out_channels": 2},
+    {"index": 1, "uid": "LG-B", "name": "LG HDR 4K", "out_channels": 2},
+    {"index": 2, "uid": "JABRA-OUT", "name": "Jabra Link 370", "out_channels": 2},
+    {"index": 3, "uid": "JABRA-IN", "name": "Jabra Link 370", "out_channels": 0},
+    {"index": 4, "uid": "BuiltInMicrophoneDevice", "name": "MacBook Pro Microphone", "out_channels": 0},
+    {"index": 5, "uid": "BuiltInSpeakerDevice", "name": "MacBook Pro Speakers", "out_channels": 2},
+]
+
+
 class DraaiTests(unittest.TestCase):
 
     def setUp(self):
@@ -284,6 +295,9 @@ class DraaiTests(unittest.TestCase):
         draai.backends.soap_call = self.soap
         draai.backends.ssdp_discover = lambda timeout=3.0: {"192.168.1.50"}
         draai.backends.cast_discover = lambda timeout=4.0: []
+        # never touch real CoreAudio / ffmpeg
+        draai.local._enumerate_coreaudio = lambda: []
+        draai.local._available = lambda: True
         sp.config["folders"] = [self.tmp]
         sp.config["manual_ips"] = []
         # never let a debounced save reach the real config dir
@@ -1756,6 +1770,27 @@ class DraaiTests(unittest.TestCase):
                 self.assertIn("function tick", body)
         finally:
             httpd.shutdown()
+
+    # -- this Mac's own outputs (local backend) -------------------------------
+
+    def test_local_outputs_filter_and_dedupe(self):
+        draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
+        names = [o["name"] for o in draai.local.list_outputs()]
+        self.assertEqual(names, ["LG HDR 4K", "LG HDR 4K (2)", "Jabra Link 370", "MacBook Pro Speakers"])
+
+    def test_local_discover_speaker_shape(self):
+        draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
+        sp_ = {s["uuid"]: s for s in draai.local.local_discover()}
+        j = sp_["MAC_JABRA-OUT"]
+        self.assertEqual((j["backend"], j["ip"], j["is_group"]), ("local", None, False))
+        self.assertEqual(j["members"], [{"uuid": "MAC_JABRA-OUT", "name": "Jabra Link 370", "ip": None}])
+        self.assertEqual(draai.local.device_index("JABRA-OUT"), 2)   # index counts inputs too
+        self.assertIsNone(draai.local.device_index("GONE"))
+
+    def test_local_discover_empty_without_ffmpeg(self):
+        draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
+        draai.local._available = lambda: False
+        self.assertEqual(draai.local.local_discover(), [])
 
 
 if __name__ == "__main__":
