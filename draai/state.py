@@ -14,7 +14,8 @@ tracks = []            # list of dicts: {id, path, title, folder, ext}
 tracks_by_id = {}      # id -> track dict
 speakers = []          # list of dicts: {uuid, name, ip}
 config = {"folders": [os.path.join(os.path.expanduser("~"), "Music")],
-          "manual_ips": [], "last_speaker": None, "ui": {}}
+          "manual_ips": [], "last_speaker": None, "ui": {},
+          "local_volume": {}}
 server_port = PREFERRED_PORT
 
 art_cache = {}             # track id -> (mime, bytes); simple bounded cache

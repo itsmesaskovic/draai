@@ -251,7 +251,10 @@ function fill(el){ if(el) el.style.setProperty("--v",(el.value/(el.max||100)*100
 async function loadRooms(){
   const st = await api("/api/state");
   S.rooms = st.speakers||[];
-  if(!S.speaker){ S.speaker = st.last_speaker || (S.rooms[0] && S.rooms[0].uuid) || null; }
+  /* never default to a Mac output: the remembered room if it's around, else the first network room */
+  if(S.speaker && !S.rooms.some(r=>r.uuid===S.speaker)) S.speaker=null;
+  if(!S.speaker){ const last=S.rooms.find(r=>r.uuid===st.last_speaker), net=S.rooms.find(r=>r.backend!=="local");
+    S.speaker = (last||net||{}).uuid || null; }
   renderRooms();
 }
 function renderRooms(){
@@ -262,7 +265,7 @@ function renderRooms(){
 
 async function poll(){
   try{
-    if(!S.rooms.length) await loadRooms();
+    if(!S.rooms.some(r=>r.backend!=="local")) await loadRooms();   // Mac outputs alone don't count as found
     if(S.speaker){
       const [status] = await Promise.all([ api("/api/status?speaker="+enc(S.speaker)) ]);
       S.status = status;

@@ -525,10 +525,13 @@ def cast_queue_move(spk, from_no, to_no):
     if not (0 <= a < len(q["ids"])) or not (0 <= b < len(q["ids"])):
         return
     with cast_queues_lock:
-        cur = q["ids"][q["idx"]] if q["ids"] else None
         q["ids"].insert(b, q["ids"].pop(a))
-        if cur is not None:
-            q["idx"] = q["ids"].index(cur)     # keep pointing at the same track
+        if a == q["idx"]:                       # keep pointing at the same entry
+            q["idx"] = b                        # (by position: ids may repeat)
+        elif a < q["idx"] <= b:
+            q["idx"] -= 1
+        elif b <= q["idx"] < a:
+            q["idx"] += 1
 
 
 def cast_set_volume(spk, value):

@@ -23,13 +23,14 @@ from draai.importer import (YT_URL_RE, install_status, start_import_job,
 from draai.playlists import delete_playlist, list_playlists, load_playlist, save_playlist
 from draai.cars import list_cars, list_traffic
 from draai.cast import cast_cmd
+from draai.local import local_cmd, local_set_sleep
 from draai.listening import listened_snapshot, status_and_observe, trackinfo_snapshot
 from draai.video import VideoError, video_streams
 from draai.deletion import MAX_IDS as MAX_DELETE_IDS, delete_allowed, delete_tracks
 from draai.backends import (avt, browse_queue, enqueue_tracks, get_eq, get_rooms,
     group_join, group_leave, play_tracks, queue_jump, queue_move,
     queue_remove, refresh_speakers, seek_to, set_eq, set_room_volume, set_shuffle,
-    set_sleep, set_volume, speaker_by_uuid)
+    set_sleep, set_volume, speaker_by_uuid, refresh_local_speakers)
 
 
 def _load_ui():
@@ -421,6 +422,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/media/"):
             self.serve_media(path, head=False)
         elif path == "/api/state":
+            refresh_local_speakers()      # Mac outputs come and go; Sonos/Cast stay as found
             with state_lock:
                 sp = list(speakers)
                 n = len(tracks)
@@ -823,7 +825,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"error": "Pick a speaker first."}, 400)
                     return
                 action = body.get("action")
-                if spk.get("backend") == "cast" and action in (
+                if spk.get("backend") == "local" and action in (
+                        "pause", "resume", "stop", "next", "prev", "clearqueue"):
+                    local_cmd(spk, action)
+                elif spk.get("backend") == "cast" and action in (
                         "pause", "resume", "stop", "next", "prev", "clearqueue"):
                     cast_cmd(spk, action)
                 elif action == "pause":
@@ -841,9 +846,12 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == "clearqueue":
                     avt(spk["ip"], "RemoveAllTracksFromQueue")
                 elif action == "sleep":
-                    if spk.get("backend") == "cast":
+                    if spk.get("backend") == "local":
+                        local_set_sleep(spk, max(0, min(720, int(body.get("value", 0)))))
+                    elif spk.get("backend") == "cast":
                         raise RuntimeError("Sleep timer isn't available on Chromecast.")
-                    set_sleep(spk, body.get("value", 0))
+                    else:
+                        set_sleep(spk, body.get("value", 0))
                 elif action == "shuffle":
                     set_shuffle(spk, bool(body.get("value")))
                 else:
@@ -1135,6 +1143,11 @@ function fillSpeakers(list, keep) {
     sel.appendChild(o);
   }
   if (keep && list.some(s => s.uuid === keep)) sel.value = keep;
+  // never default to a Mac output: only the remembered room, else the first network room
+  if (!(keep && list.some(s => s.uuid === keep))) {
+    const first = list.find(s => s.backend !== "local");
+    sel.value = first ? first.uuid : "";
+  }
   currentSpeaker = sel.value;
   restartStatus();
 }
@@ -1143,7 +1156,7 @@ async function loadState() {
   const st = await api("/api/state");
   $("folder").value = st.folder || "";
   fillSpeakers(st.speakers || [], st.last_speaker);
-  if (!(st.speakers || []).length) rescanSpeakers();
+  if (!(st.speakers || []).some(s => s.backend !== 'local')) rescanSpeakers();
   if (st.track_count > 0) loadTracks();
   else if (st.folder) scanFolder();   // first run: try the default folder
 }

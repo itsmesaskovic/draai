@@ -26,7 +26,7 @@ import os
 import threading
 import time
 
-from draai import cast
+from draai import cast, local
 from draai.state import (listening, listening_lock, _listening_dirty, speakers, state_lock,
                          trackinfo, trackinfo_lock, _trackinfo_dirty)
 from draai.constants import CONFIG_DIR, LISTENING_PATH, LISTEN_INTERVAL, TRACKINFO_PATH
@@ -238,6 +238,8 @@ def watch_once(now=None):
             seen = last_seen(spk)
             if seen is not None and now - seen < LISTEN_INTERVAL / 2:
                 continue                   # the UI is polling it already
+            if spk.get("backend") == "local" and not local.has_player(spk.get("uuid")):
+                continue                   # a Mac output DRAAI hasn't played on
             if spk.get("backend") == "cast":
                 sess = cast.cast_sessions.get(spk.get("ip"))
                 if sess is None or not getattr(sess, "_running", False):

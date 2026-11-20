@@ -1,4 +1,6 @@
 """DRAAI entry point:  python3 -m draai   (and the packaged draai.pyz)."""
+import atexit
+import signal
 import sys
 import threading
 import time
@@ -11,7 +13,24 @@ from draai.library import scan_all
 from draai.backends import load_positions, refresh_speakers
 from draai.server import DraaiServer, Handler
 from draai.install import install_autostart, running_engine, uninstall_autostart
+from draai.local import local_shutdown
 from draai.listening import load_listening, load_trackinfo, start_watcher
+
+
+def _install_signal_handlers():
+    """launchd / brew services / kill send SIGTERM (or SIGHUP): stop every
+    ffmpeg first, then exit cleanly. (A SIGKILL can't be caught; no
+    parent-death guard is attempted since that needs non-stdlib tricks.)"""
+    def _bye(signum, frame):
+        local_shutdown()
+        sys.exit(0)
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _bye)
+            except (ValueError, OSError):
+                pass
 
 
 def main():
@@ -62,13 +81,17 @@ def main():
     print("  Press Ctrl+C to quit.")
     print()
 
+    _install_signal_handlers()
+    atexit.register(local_shutdown)       # never leave an ffmpeg playing in a headset
+
     # Warm up in the background so the page has data quickly.
     def warmup():
         scan_all()
         # discovery can be slow right after boot — retry a few times
+        # (Mac outputs are always "found", so wait for a real network speaker)
         for _ in range(4):
             found, _err = refresh_speakers()
-            if found:
+            if any(s.get("backend") in ("sonos", "cast") for s in found):
                 break
             time.sleep(4)
     threading.Thread(target=warmup, daemon=True).start()
@@ -80,6 +103,7 @@ def main():
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nBye!")
+        local_shutdown()
 
 
 if __name__ == "__main__":

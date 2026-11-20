@@ -8,7 +8,7 @@ the configured music folders.
 """
 import os
 
-from draai import analysis, backends, cast
+from draai import analysis, backends, cast, local
 from draai.state import (config, listening, listening_lock, positions, positions_lock,
                          speakers, state_lock, trackinfo, trackinfo_lock, tracks,
                          tracks_by_id)
@@ -52,6 +52,8 @@ def playing_track_ids():
             groups = list(speakers)
         for spk in groups:
             try:
+                if spk.get("backend") == "local" and not local.has_player(spk.get("uuid")):
+                    continue               # a Mac output DRAAI hasn't played on
                 if spk.get("backend") == "cast":
                     sess = cast.cast_sessions.get(spk.get("ip"))
                     if sess is None or not getattr(sess, "_running", False):

@@ -1,5 +1,9 @@
 /* ---------------- status ---------------- */
 function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.state;
+  /* toast each NEW engine error once (error_seq changes); never on the first status after page load */
+  const eseq=A.status.error_seq;
+  if(typeof eseq==="number"){ if(A.lastErrSeq!=null && eseq!==A.lastErrSeq && A.status.error) toast(A.status.error); A.lastErrSeq=eseq; }
+  else { const err=A.status.error||null; if(err&&err!==A.lastErr&&A.lastErr!==undefined) toast(err); A.lastErr=err; }
   durSec=parseTime(A.status.duration); const exact=typeof A.status.pos==="number" && isFinite(A.status.pos);
   const np=exact ? A.status.pos : parseTime(A.status.position);
   const wasPlaying=playing;
@@ -96,33 +100,41 @@ async function enqueue(ids){ if(!A.speaker)return toast("Select a room first.");
   await guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids}); A.queueIds.push(...ids); poll(); toast("Added to queue",true); }); }
 
 /* ---------------- rooms / grouping ---------------- */
-function renderRooms(){ const list=$("#roomList");
+function renderRooms(){ const list=$("#roomList"), tog=$("#roomTog");
+  if(tog) tog.innerHTML="";
   if(!A.speakers.length){ list.innerHTML=`<div style="color:var(--dim2);font-size:12px;padding:6px 12px">No rooms found. Rescan or add an IP.</div>`; return; }
-  list.innerHTML=A.speakers.map(g=>{ const on=A.speaker&&A.speaker.uuid===g.uuid, members=g.members||[{uuid:g.uuid,name:g.name,ip:g.ip}];
-    const grouped=members.length>1; const isCast=g.backend==="cast";
-    return `<div class="room ${on?"on":""}" data-room="${g.uuid}">
+  const many=A.speakers.length>1, open=many&&(A.roomsOpen||!A.speaker);   // nothing selected: nothing to collapse to
+  const rank=g=>g.backend==="local"?2:g.backend==="cast"?1:0;
+  const act=A.speaker&&A.speakers.find(s=>s.uuid===A.speaker.uuid);
+  const others=A.speakers.filter(g=>g!==act).map((g,i)=>[g,i]).sort((x,y)=>rank(x[0])-rank(y[0])||x[1]-y[1]).map(x=>x[0]);
+  const badge=g=>g.backend==="cast"?`<span class="castbadge">Cast</span>`:g.backend==="local"?`<span class="castbadge">Mac</span>`:"";
+  const card=g=>{ const members=g.members||[{uuid:g.uuid,name:g.name,ip:g.ip}];
+    const grouped=members.length>1; const isCast=g.backend==="cast", isLocal=g.backend==="local";
+    return `<div class="room on" data-room="${g.uuid}">
       <div class="head" data-select="${g.uuid}">
         <span class="dot"></span>
-        <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${isCast?`<span class="castbadge">Cast</span>`:""}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):esc(g.ip||"")}</small></span>
-        ${isCast?"":`<button class="gbtn" data-group="${g.uuid}" title="Group rooms"><svg class="ic" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M4 4h6v6H4zM14 14h6v6h-6z"/></svg></button>`}
+        <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${badge(g)}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):(isLocal?"This Mac":esc(g.ip||""))}</small></span>
+        ${isCast||isLocal?"":`<button class="gbtn" data-group="${g.uuid}" title="Group rooms"><svg class="ic" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M4 4h6v6H4zM14 14h6v6h-6z"/></svg></button>`}
       </div>
-      ${grouped?`<div class="members">${members.map(m=>`<div class="member">
+      ${grouped&&!open?`<div class="members">${members.map(m=>`<div class="member">
         <small>${esc(m.name)}</small>
         <input type="range" class="slider" data-roomvol="${m.uuid}" min="0" max="100" value="${m.volume!=null?m.volume:30}">
         ${members.length>1&&!m.fixed?`<button class="drop" data-ungroup="${m.uuid}" title="Remove from group"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"/></svg></button>`:""}
       </div>`).join("")}</div>`:""}
-    </div>`;
-  }).join("");
+    </div>`; };
+  const row=g=>`<div class="room rrow" data-room="${g.uuid}"><div class="head" data-select="${g.uuid}"><span class="dot"></span><span class="txt"><b>${esc(g.name)}</b>${badge(g)}</span></div></div>`;
+  if(tog&&many) tog.innerHTML=`<button class="rtog${open?" open":""}" data-roomtoggle="1" aria-expanded="${open}">All rooms<svg class="ic" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>`;
+  list.innerHTML=(act?card(act):"")+(open||!act?others.map(row).join(""):"");
   $$("#roomList [data-roomvol]").forEach(el=>setSlider(el,+el.value));
 }
 function applyBackendUI(){
-  const cast = !!(A.speaker && A.speaker.backend === "cast");
+  const cast = !!(A.speaker && (A.speaker.backend === "cast" || A.speaker.backend === "local"));
   const eq = $("#eqBtn"), npeq = $("#npEq");
   if(eq) eq.style.display = cast ? "none" : "";
   if(npeq) npeq.style.display = cast ? "none" : "";
   if(cast) $("#eqPop").classList.remove("open");
 }
-async function selectRoom(uuid){ A.speaker=A.speakers.find(s=>s.uuid===uuid)||A.speaker; renderRooms(); applyBackendUI();
+async function selectRoom(uuid){ A.roomsOpen=false; A.lastErrSeq=null; A.lastErr=undefined; A.speaker=A.speakers.find(s=>s.uuid===uuid)||A.speaker; renderRooms(); applyBackendUI();
   A.queueIds=[]; A.curId=null; startPolling(); loadEq(); await loadRoomVolumes(); }
 async function loadRoomVolumes(){ if(!A.speaker)return; try{ const r=await api("/api/rooms?speaker="+enc(A.speaker.uuid));
   const g=A.speakers.find(s=>s.uuid===A.speaker.uuid); if(g&&r.rooms){ g.members=r.rooms.map(rm=>({uuid:rm.uuid,name:rm.name,ip:rm.ip,volume:rm.volume,fixed:rm.fixed})); renderRooms(); } }catch(e){} }
@@ -131,7 +143,7 @@ async function loadRoomVolumes(){ if(!A.speaker)return; try{ const r=await api("
 let groupAnchor=null;
 function openGroupPop(uuid,btn){ groupAnchor=uuid; const g=A.speakers.find(s=>s.uuid===uuid);
   const memberIds=new Set((g.members||[]).map(m=>m.uuid));
-  const others=[]; A.speakers.forEach(s=>{ (s.members||[{uuid:s.uuid,name:s.name,ip:s.ip}]).forEach(m=>{ if(m.uuid!==g.uuid) others.push({...m,inGroup:memberIds.has(m.uuid)}); }); });
+  const others=[]; A.speakers.forEach(s=>{ if(s.backend==="local"||s.backend==="cast")return; (s.members||[{uuid:s.uuid,name:s.name,ip:s.ip}]).forEach(m=>{ if(m.uuid!==g.uuid) others.push({...m,inGroup:memberIds.has(m.uuid)}); }); });
   $("#groupHint").textContent=`Play in sync with ${g.name}.`;
   $("#groupOpts").innerHTML = others.length? others.map(m=>`<div class="gopt ${m.inGroup?"on":""}" data-toggle="${m.uuid}"><span class="txt"><b>${esc(m.name)}</b><small>${esc(m.ip||"")}</small></span><span class="chk"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></div>`).join("")
     : `<div style="color:var(--dim2);font-size:12px;padding:8px">No other rooms to group with.</div>`;
@@ -352,7 +364,8 @@ function wire(){
     if(rm){ e.stopPropagation(); guard(async()=>{ await api("/api/queue_remove",{speaker:A.speaker.uuid,no:+rm.dataset.remove}); poll(); }); return; }
     if(ung){ e.stopPropagation(); guard(async()=>{ const r=await api("/api/ungroup",{member:ung.dataset.ungroup}); if(r&&r.speakers)A.speakers=r.speakers; else await refreshState(); renderRooms(); }); return; }
     if(grp){ e.stopPropagation(); openGroupPop(grp.dataset.group,grp); return; }
-    if(sel){ selectRoom(sel.dataset.select); return; }
+    if(t("[data-roomtoggle]")){ e.stopPropagation(); A.roomsOpen=!A.roomsOpen; renderRooms(); return; }
+    if(sel){ if(A.speaker&&sel.dataset.select===A.speaker.uuid){ if(A.speakers.length>1){ A.roomsOpen=!A.roomsOpen; renderRooms(); } } else selectRoom(sel.dataset.select); return; }
     if(tog){ toggleGroup(tog.dataset.toggle); return; }
     if(slp){ A.sleepMin=+slp.dataset.sleep; renderSleep(); cmd("sleep",A.sleepMin); return; }
     if(play){ playTracks([play.dataset.play]); return; }
@@ -366,6 +379,9 @@ function wire(){
     if(!t("#groupPop")&&!t("[data-group]")) $("#groupPop").classList.remove("open");
   });
   // room volume (delegated input)
+  document.addEventListener("pointerdown",e=>{ if(e.target.closest&&e.target.closest("[data-roomvol]")) A.roomDrag=true; });
+  const endDrag=()=>{ if(!A.roomDrag)return; A.roomDrag=false; if(A.roomDirty){ A.roomDirty=false; renderRooms(); } };
+  document.addEventListener("pointerup",endDrag); document.addEventListener("pointercancel",endDrag);
   document.addEventListener("input",e=>{ const rv=e.target.closest("[data-roomvol]"); if(rv){ setSlider(rv,+rv.value);
     guard(()=>api("/api/room_volume",{speaker:rv.dataset.roomvol,volume:+rv.value})); } });
   // transport
@@ -421,8 +437,8 @@ function wire(){
   $("#trebleSlider").addEventListener("input",e=>{ A.eq.treble=+e.target.value; $("#trebleVal").textContent=(A.eq.treble>0?"+":"")+A.eq.treble; pushEq(); });
   $("#loudToggle").addEventListener("click",()=>{ A.eq.loudness=!A.eq.loudness; $("#loudToggle").classList.toggle("on",A.eq.loudness); pushEq(); });
   // discovery / folder / yt
-  $("#rescanBtn").addEventListener("click",()=>guard(async()=>{ await api("/api/rescan_speakers",{}); await refreshState(); toast("Rooms refreshed",true); }));
-  $("#addIpBtn").addEventListener("click",()=>{ const ip=$("#ipInput").value.trim(); if(!ip)return; guard(async()=>{ await api("/api/add_ip",{ip}); $("#ipInput").value=""; await refreshState(); toast("Speaker added",true); }); });
+  $("#rescanBtn").addEventListener("click",()=>guard(async()=>{ const r=await api("/api/rescan_speakers",{}); A.roomsOpen=false; await refreshState(); renderRooms(); if(r&&r.error)toast(r.error); else toast("Rooms refreshed",true); }));
+  $("#addIpBtn").addEventListener("click",()=>{ const ip=$("#ipInput").value.trim(); if(!ip)return; guard(async()=>{ const r=await api("/api/add_ip",{ip}); $("#ipInput").value=""; await refreshState(); if(r&&r.error)toast(r.error); else toast("Speaker added",true); }); });
   $("#ipInput").addEventListener("keydown",e=>{ if(e.key==="Enter")$("#addIpBtn").click(); });
   
   /* folders */
@@ -460,12 +476,24 @@ function toggleShuffle(){ A.shuffle=!A.shuffle; $("#shufBtn").classList.toggle("
   const st=$("#shuffleToggle"); if(st)st.classList.toggle("on",A.shuffle); cmd("shuffle",A.shuffle); }
 
 /* ---------------- state refresh ---------------- */
-async function refreshState(){ const s=await api("/api/state"); A.speakers=s.speakers||[]; A.folder=s.folder||""; A.trackCount=s.track_count||0;
+const spkSig=a=>(a||[]).map(g=>g.uuid+"|"+g.name+"|"+(g.members||[]).map(m=>m.uuid+":"+m.name).join(",")).join(";");
+async function refreshState(){ const s=await api("/api/state");
+  /* Poll-safe: if the rooms are unchanged keep the same objects (member volumes live on them)
+     and don't re-render; if they changed, carry known member volumes over by uuid. */
+  const nextSp=s.speakers||[]; const sameSp=spkSig(nextSp)===spkSig(A.speakers);
+  if(!sameSp){ const vols={}; (A.speakers||[]).forEach(g=>(g.members||[]).forEach(m=>{ if(m.volume!=null)vols[m.uuid]=m.volume; }));
+    nextSp.forEach(g=>(g.members||[]).forEach(m=>{ if(m.volume==null&&vols[m.uuid]!=null)m.volume=vols[m.uuid]; }));
+    A.speakers=nextSp; }
+  A.folder=s.folder||""; A.trackCount=s.track_count||0;
   A.folders=s.folders||(s.folder?[s.folder]:[]); renderFolders(); $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks";
   const vl=$("#verLine"); if(vl && s.version){ vl.textContent="v"+s.version;
     vl.title=s.install==="homebrew"?"Installed with Homebrew. Update with: brew upgrade draai":"DRAAI "+s.version; }
-  if(!A.speaker && A.speakers.length){ A.speaker=A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers[0]; applyBackendUI(); }
-  renderRooms(); }
+  /* Never auto-select a Mac output: last choice if still around, else the first network room. */
+  const pick=()=>A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers.find(x=>x.backend!=="local")||null;
+  let gone=false;
+  if(A.speaker && !A.speakers.some(x=>x.uuid===A.speaker.uuid)){ gone=A.speaker.backend==="local"; if(gone){ A.speaker=null; clearInterval(pollTimer); } }
+  if(!A.speaker && A.speakers.length){ A.speaker=pick(); if(A.speaker) applyBackendUI(); }
+  if(!sameSp||gone){ if(A.roomDrag) A.roomDirty=true; else renderRooms(); } return gone; }
 async function refreshTracks(){ await guard(async()=>{ const d=await api("/api/tracks?q="); A.tracks=d.tracks||[]; A.trackCount=d.total??A.tracks.length;
   $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; renderContent(); npVideoUpdate(); }); loadMostPlayed(); }
 
@@ -575,14 +603,20 @@ async function boot(){
   await loadPrefs();
   await guard(refreshState);
   loadPlaylists();
-  if(!DEMO && !A.speakers.length){
+  const haveNet=()=>A.speakers.some(s=>s.backend!=='local');   // Mac outputs alone don't count
+  if(!DEMO && !haveNet()){
     let tries=0;
     const retry=setInterval(async()=>{
-      if(A.speakers.length||++tries>12){clearInterval(retry);return;}
+      if(haveNet()||++tries>12){clearInterval(retry);return;}
       await guard(refreshState);
-      if(A.speakers.length&&A.speaker){selectRoom(A.speaker.uuid);}
+      if(haveNet()&&A.speaker){selectRoom(A.speaker.uuid);}
     },2500);
   }
+  if(!DEMO) setInterval(async()=>{                      // Mac outputs come and go (headset plugged in/out)
+    const had=A.speaker; let gone=false;
+    try{ gone=await refreshState(); }catch(e){ return; }
+    if(A.speaker && (!had || gone)) selectRoom(A.speaker.uuid);
+  },10000);
   loadYt();
   await refreshTracks();
   loadAccess();
