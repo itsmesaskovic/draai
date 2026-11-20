@@ -117,11 +117,11 @@ def refresh_speakers():
     merged = sonos + cast + mac
     with state_lock:
         speakers[:] = merged
-    if merged:
+    if sonos or cast:
         return merged, None
     if ips and sonos_err:
-        return [], "Found devices but could not read their status: %s" % sonos_err
-    return [], ("No speakers found. Make sure this Mac is on the same "
+        return merged, "Found devices but could not read their status: %s" % sonos_err
+    return merged, ("No speakers found. Make sure this Mac is on the same "
                 "Wi-Fi network as the speakers, then press Rescan. "
                 "You can also add a speaker by its IP address.")
 

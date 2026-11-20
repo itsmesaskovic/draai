@@ -1,5 +1,6 @@
 """DRAAI entry point:  python3 -m draai   (and the packaged draai.pyz)."""
 import atexit
+import signal
 import sys
 import threading
 import time
@@ -14,6 +15,22 @@ from draai.server import DraaiServer, Handler
 from draai.install import install_autostart, running_engine, uninstall_autostart
 from draai.local import local_shutdown
 from draai.listening import load_listening, load_trackinfo, start_watcher
+
+
+def _install_signal_handlers():
+    """launchd / brew services / kill send SIGTERM (or SIGHUP): stop every
+    ffmpeg first, then exit cleanly. (A SIGKILL can't be caught; no
+    parent-death guard is attempted since that needs non-stdlib tricks.)"""
+    def _bye(signum, frame):
+        local_shutdown()
+        sys.exit(0)
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _bye)
+            except (ValueError, OSError):
+                pass
 
 
 def main():
@@ -64,6 +81,7 @@ def main():
     print("  Press Ctrl+C to quit.")
     print()
 
+    _install_signal_handlers()
     atexit.register(local_shutdown)       # never leave an ffmpeg playing in a headset
 
     # Warm up in the background so the page has data quickly.

@@ -195,6 +195,8 @@ class LocalPlayer:
         self.spawned_at = 0.0
         self.fail_streak = 0
         self.error = None
+        self.error_seq = 0          # bumped on every NEW error so the UI toasts each once
+        self.ended = False          # stopped because the queue ran out
         self.vol_timer = None
         self.sleep_timer = None
 
@@ -209,12 +211,16 @@ class LocalPlayer:
             except Exception:
                 pass
 
+    def _set_error(self, msg):
+        self.error = msg
+        self.error_seq += 1
+
     def _halt(self, error=None):
         self._kill()
         self.state = "STOPPED"
         self.pos = 0.0
         if error:
-            self.error = error
+            self._set_error(error)
 
     def _track(self):
         if self.ids and 0 <= self.idx < len(self.ids):
@@ -240,6 +246,7 @@ class LocalPlayer:
         except Exception:
             return self._halt(_FFMPEG_MISSING)
         self.proc = proc
+        self.ended = False
         self.start = start
         self.pos = start
         self.state = "PLAYING"
@@ -275,11 +282,11 @@ class LocalPlayer:
                 return self._halt("The %s is no longer connected." % self.name)
             if time.monotonic() - self.spawned_at < FAST_FAIL_SECS:
                 self.fail_streak += 1
-                self.error = _SKIPPED
+                self._set_error(_SKIPPED)
                 if self.fail_streak >= len(self.ids):
                     return self._halt()
                 return self._advance()
-            self.error = _SKIPPED
+            self._set_error(_SKIPPED)
             self._advance()
 
     def _advance(self):
@@ -287,6 +294,7 @@ class LocalPlayer:
             self._play_index(self.idx + 1)
         else:
             self._halt()
+            self.ended = True
 
     def _play_index(self, i, start=None):
         self.idx = i
@@ -302,23 +310,23 @@ class LocalPlayer:
 
     # -- volume / sleep timers --------------------------------------------------
 
-    def _respawn_now(self):
+    def _volume_settled(self):
+        """Debounced: persist the volume once and, if playing, restart ffmpeg."""
         with self.lock:
             self.vol_timer = None
             if self.state == "PLAYING":
                 self._spawn_current(self.pos)
+        _config.save_config()
 
     def set_volume(self, value):
         v = max(0, min(100, int(float(value))))
         config.setdefault("local_volume", {})[self.uuid] = v
-        _config.save_config()
         with self.lock:
             if self.vol_timer:
                 self.vol_timer.cancel()
-            if self.state == "PLAYING":
-                self.vol_timer = threading.Timer(VOLUME_DEBOUNCE, self._respawn_now)
-                self.vol_timer.daemon = True
-                self.vol_timer.start()
+            self.vol_timer = threading.Timer(VOLUME_DEBOUNCE, self._volume_settled)
+            self.vol_timer.daemon = True
+            self.vol_timer.start()
 
     def set_sleep(self, minutes):
         with self.lock:
@@ -350,6 +358,12 @@ class LocalPlayer:
             if self.state == "PAUSED_PLAYBACK":
                 self.error = None
                 self._spawn_current(self.pos)
+            elif self.state == "STOPPED" and self.ids:
+                self.error = None
+                self.fail_streak = 0
+                if self.ended or not (0 <= self.idx < len(self.ids)):
+                    self.idx = 0
+                self._play_index(self.idx, start=0.0)
 
     def stop(self):
         with self.lock:
@@ -392,20 +406,31 @@ class LocalPlayer:
             if i < self.idx:
                 self.idx -= 1
             elif i == self.idx:
-                if self.ids:
-                    self._play_index(min(self.idx, len(self.ids) - 1))
-                else:
+                was_playing = self.state == "PLAYING"
+                if not self.ids:
                     self.idx = 0
                     self._halt()
+                elif self.idx < len(self.ids):
+                    if was_playing:
+                        self._play_index(self.idx)
+                    else:
+                        self._halt()            # don't start anything while paused/stopped
+                else:
+                    self.idx = len(self.ids) - 1
+                    self._halt()
+                    self.ended = True
 
     def move(self, a, b):
         with self.lock:
             if not (0 <= a < len(self.ids)) or not (0 <= b < len(self.ids)):
                 return
-            cur = self.ids[self.idx] if self.ids else None
             self.ids.insert(b, self.ids.pop(a))
-            if cur is not None:
-                self.idx = self.ids.index(cur)
+            if a == self.idx:
+                self.idx = b
+            elif a < self.idx <= b:
+                self.idx -= 1
+            elif b <= self.idx < a:
+                self.idx += 1
 
     def shuffle(self):
         with self.lock:
@@ -553,7 +578,7 @@ def local_get_status(spk):
     if p is None:
         return {"state": "STOPPED", "title": "", "position": "0:00:00", "duration": "",
                 "volume": _volume_for(spk["uuid"]), "track_no": None,
-                "track_id": None, "pos": 0.0, "error": None}
+                "track_id": None, "pos": 0.0, "error": None, "error_seq": 0}
     with p.lock:
         t = p._track()
         tid = p.ids[p.idx] if t else None
@@ -566,7 +591,7 @@ def local_get_status(spk):
                 "track_no": (p.idx + 1) if p.ids else None,
                 "track_id": tid,
                 "pos": round(p.pos, 3),
-                "error": p.error}
+                "error": p.error, "error_seq": p.error_seq}
 
 
 def local_shutdown():

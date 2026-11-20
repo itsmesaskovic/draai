@@ -2004,11 +2004,12 @@ class DraaiTests(unittest.TestCase):
         self.assertNotIn("MAC_JABRA-OUT", [s["uuid"] for s in sp.speakers])
         self.assertEqual(len(sp.speakers), 4)
 
-    def test_local_only_is_not_no_speakers(self):
+    def test_local_only_still_reports_no_speakers(self):
         draai.backends.ssdp_discover = lambda timeout=3.0: set()
         draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
         found, err = draai.backends.refresh_speakers()
-        self.assertEqual((len(found), err), (4, None))
+        self.assertEqual(len(found), 4)                 # Mac rooms still returned
+        self.assertTrue(err.startswith("No speakers found."))
 
     def test_local_dispatch_play_and_cmd(self):
         make_mp3(os.path.join(self.tmp, "l.mp3"), "L-Track")
@@ -2078,6 +2079,165 @@ class DraaiTests(unittest.TestCase):
         finally:
             L.get_status = old_status
             sp.speakers[:] = old_speakers
+
+
+    # -- review fixes -------------------------------------------------------------
+
+    def _lp(self, n=3):
+        spk, ids, spawned = self._local_setup(n_tracks=n)
+        return spk, ids, spawned
+
+    def test_local_resume_from_stopped_restarts(self):
+        spk, ids, spawned = self._lp(2)
+        draai.local.local_play_tracks(spk, ids)
+        draai.local.local_cmd(spk, "stop")
+        draai.local.local_cmd(spk, "resume")            # stopped mid-queue: replay current
+        self.assertEqual(len(spawned), 2)
+        self.assertIn("/m/t0.mp3", spawned[1].argv)
+        self.assertEqual(draai.local.local_get_status(spk)["state"], "PLAYING")
+        draai.local.local_cmd(spk, "next")
+        spawned[2].finish(0)                            # queue runs out
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["state"] == "STOPPED"))
+        draai.local.local_cmd(spk, "resume")            # queue ended: back to the top
+        self.assertTrue(wait_for(lambda: len(spawned) == 4))
+        self.assertIn("/m/t0.mp3", spawned[3].argv)
+        self.assertEqual(draai.local.local_get_status(spk)["track_no"], 1)
+
+    def test_save_config_concurrent_never_corrupts(self):
+        sp.config["ui"] = {"k%d" % i: "x" * 200 for i in range(200)}
+        self.addCleanup(sp.config.__setitem__, "ui", {})
+        stop = threading.Event()
+        bad = []
+
+        def reader():
+            while not stop.is_set():
+                try:
+                    with open(draai.config.CONFIG_PATH) as f:
+                        json.load(f)
+                except FileNotFoundError:
+                    pass
+                except ValueError as e:
+                    bad.append(e)
+
+        def writer():
+            for i in range(40):
+                sp.config["ui"]["k%d" % (i % 200)] = "y" * i
+                draai.config.save_config()
+        rt = threading.Thread(target=reader)
+        rt.start()
+        ws = [threading.Thread(target=writer) for _ in range(6)]
+        [w.start() for w in ws]
+        [w.join() for w in ws]
+        stop.set()
+        rt.join()
+        self.assertEqual(bad, [])
+        with open(draai.config.CONFIG_PATH) as f:
+            json.load(f)
+        self.assertEqual([n for n in os.listdir(self.tmp) if n.endswith(".tmp")], [])
+
+    def test_local_volume_saves_once_when_debounced(self):
+        spk, ids, spawned = self._lp(1)
+        calls = []
+        real = draai.config.save_config
+        draai.config.save_config = lambda: calls.append(1)
+        self.addCleanup(setattr, draai.config, "save_config", real)
+        for v in range(40, 50):
+            draai.local.local_set_volume(spk, v)
+        self.assertEqual(calls, [])                     # not per slider event
+        self.assertTrue(wait_for(lambda: len(calls) == 1))
+        time.sleep(0.1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(sp.config["local_volume"]["MAC_JABRA-OUT"], 49)
+
+    def test_signal_handlers_shut_down_ffmpeg(self):
+        import signal
+        import draai.__main__ as dm
+        old = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)}
+        self.addCleanup(lambda: [signal.signal(s, h) for s, h in old.items()])
+        called = []
+        real = dm.local_shutdown
+        dm.local_shutdown = lambda: called.append(1)
+        self.addCleanup(setattr, dm, "local_shutdown", real)
+        dm._install_signal_handlers()
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            h = signal.getsignal(sig)
+            self.assertTrue(callable(h))
+            with self.assertRaises(SystemExit):
+                h(sig, None)
+        self.assertEqual(len(called), 2)
+
+    def test_local_remove_current_respects_state(self):
+        spk, ids, spawned = self._lp(3)
+        draai.local.local_play_tracks(spk, ids)
+        draai.local.local_queue_remove(spk, 1)          # playing: next one takes over
+        self.assertEqual(len(spawned), 2)
+        self.assertIn("/m/t1.mp3", spawned[1].argv)
+        draai.local.local_cmd(spk, "pause")
+        draai.local.local_queue_remove(spk, 1)          # paused: nothing starts
+        self.assertEqual(len(spawned), 2)
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["state"], st["track_id"]), ("STOPPED", ids[2]))
+        draai.local.local_cmd(spk, "resume")
+        self.assertEqual(len(spawned), 3)
+        draai.local.local_queue_remove(spk, 1)          # playing the LAST item, removed
+        st = draai.local.local_get_status(spk)
+        self.assertEqual(st["state"], "STOPPED")
+        self.assertEqual(len(spawned), 3)               # did not start anything
+
+    def test_local_remove_last_playing_stops(self):
+        spk, ids, spawned = self._lp(3)
+        draai.local.local_play_tracks(spk, ids)
+        draai.local.local_queue_jump(spk, 3)
+        n = len(spawned)
+        draai.local.local_queue_remove(spk, 3)
+        self.assertEqual(len(spawned), n)
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["state"], st["track_no"]), ("STOPPED", 2))
+
+    def test_refresh_error_ignores_mac_rooms_and_keeps_them(self):
+        draai.backends.ssdp_discover = lambda timeout=3.0: set()
+        draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
+        found, err = draai.backends.refresh_speakers()
+        self.assertEqual({s["backend"] for s in found}, {"local"})
+        self.assertIn("No speakers found", err)
+
+    def test_local_move_with_duplicate_tracks(self):
+        spk, ids, spawned = self._lp(2)
+        A, B = ids
+        draai.local.local_play_tracks(spk, [A, B, A])
+        draai.local.local_queue_jump(spk, 3)            # the second A
+        p = draai.local.players["MAC_JABRA-OUT"]
+        draai.local.local_queue_move(spk, 1, 2)         # first A after B: [B, A, A]
+        self.assertEqual((p.ids, p.idx), ([B, A, A], 2))
+        draai.local.local_queue_move(spk, 3, 1)         # current to the front
+        self.assertEqual((p.ids, p.idx), ([A, B, A], 0))
+        draai.local.local_queue_move(spk, 3, 1)         # same track moved over it
+        self.assertEqual((p.ids, p.idx), ([A, A, B], 1))
+
+    def test_cast_move_with_duplicate_tracks(self):
+        spk = {"uuid": "C1", "ip": "10.9.9.9", "backend": "cast"}
+        q = {"ids": ["A", "B", "A"], "idx": 2}
+        draai.cast.cast_queues["10.9.9.9"] = q
+        self.addCleanup(draai.cast.cast_queues.pop, "10.9.9.9", None)
+        draai.cast.cast_queue_move(spk, 1, 2)
+        self.assertEqual((q["ids"], q["idx"]), (["B", "A", "A"], 2))
+        draai.cast.cast_queue_move(spk, 3, 1)
+        self.assertEqual((q["ids"], q["idx"]), (["A", "B", "A"], 0))
+        draai.cast.cast_queue_move(spk, 3, 1)
+        self.assertEqual((q["ids"], q["idx"]), (["A", "A", "B"], 1))
+
+    def test_local_error_seq_increments_per_new_error(self):
+        spk, ids, spawned = self._lp(2)
+        draai.local.local_play_tracks(spk, ids)
+        self.assertEqual(draai.local.local_get_status(spk)["error_seq"], 0)
+        time.sleep(0)
+        spawned[0].finish(1)                            # fast failure of track 1
+        self.assertTrue(wait_for(lambda: len(spawned) == 2))
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["error"], st["error_seq"]), ("Couldn't play that file \u2014 skipped it.", 1))
+        spawned[1].finish(1)                            # a second one is a NEW error
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["error_seq"] == 2))
+        self.assertEqual(draai.local.local_get_status({"uuid": "MAC_NONE", "name": "x"})["error_seq"], 0)
 
 
 if __name__ == "__main__":

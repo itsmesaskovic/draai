@@ -1,6 +1,8 @@
 """Config load/save (config.json under the app support dir)."""
 import json
 import os
+import tempfile
+import threading
 
 from draai.constants import CONFIG_PATH, CONFIG_DIR
 from draai.state import config
@@ -21,10 +23,27 @@ def load_config():
             config[k] = saved[k]
 
 
+_save_lock = threading.Lock()
+
+
 def save_config():
-    try:
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(config, f, indent=2)
-    except Exception:
-        pass
+    """Atomic and serialised: concurrent callers can't truncate config.json."""
+    with _save_lock:
+        tmp = None
+        try:
+            data = json.dumps(config, indent=2)     # snapshot while no one else saves
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH) or ".",
+                                       prefix=".config-", suffix=".tmp")
+            with os.fdopen(fd, "w") as f:
+                f.write(data)
+            os.replace(tmp, CONFIG_PATH)
+            tmp = None
+        except Exception:
+            pass
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
