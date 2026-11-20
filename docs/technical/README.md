@@ -15,6 +15,7 @@ gotchas. These docs are the full story behind them.
 | [architecture.md](architecture.md) | The package as a whole: module map, import DAG, `python3 -m draai` vs `draai.pyz`, `build.py`/zipapp, `_load_ui()`, storage paths, threading, autostart. |
 | [sonos-protocol.md](sonos-protocol.md) | Sonos/Symfonisk control: SSDP discovery, zone-group topology, SOAP/DIDL, queue reorder semantics, grouping, volume, EQ, resume. |
 | [google-cast.md](google-cast.md) | The Google Cast / Chromecast backend: mDNS, the hand-rolled CASTV2 protobuf, TLS transport, media sessions, position polling, the codec matrix. |
+| [mac-output.md](mac-output.md) | The "This Mac" backend: CoreAudio output enumeration via `ctypes`, ffmpeg `audiotoolbox` playback, pause/seek-by-respawn, hot-plug, volume, error sentences, why AirPlay is out. |
 | [http-and-media.md](http-and-media.md) | The HTTP server: request routing, the `/api/*` surface, `/media` serving with HTTP Range, track identity, guest/QR, UI-vs-`PAGE`. |
 | [library-and-metadata.md](library-and-metadata.md) | Scanning folders, the hand-rolled per-format tag/art readers, search/sort/group, and the file-based integrations (yt-dlp import, m3u playlists). |
 | [audio-analysis.md](audio-analysis.md) | The optional ffmpeg waveform pipeline: loudness envelope + frequency bands, the versioned JSON cache, background analysis, graceful degradation, beat/tempo detection and the optional external beat trackers. |

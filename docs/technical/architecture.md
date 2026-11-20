@@ -32,7 +32,8 @@ Module map (all under `draai/`), one line each:
 | `draai/playlists.py` | M3U playlists as files in `<first folder>/Playlists/` — `draai/playlists.py:37`, `draai/playlists.py:58`. |
 | `draai/importer.py` | Hands URLs to the user's own yt-dlp; imports audio into `<first folder>/Imported/` — `draai/importer.py:24`. |
 | `draai/cast.py` | Google Cast (CASTV2) backend: mDNS discovery, TLS session, cast-specific play/queue/volume — `draai/cast.py:137`, `draai/cast.py:205`. |
-| `draai/backends.py` | Sonos backend (SSDP/SOAP/UPnP) + the backend dispatch layer that routes each call to Sonos or Cast, resume positions — `draai/backends.py:1-3`. |
+| `draai/local.py` | Third backend (`local`): this Mac's own audio outputs via CoreAudio (`ctypes`) + an ffmpeg `audiotoolbox` child per room, in-memory queue — see [mac-output.md](mac-output.md). |
+| `draai/backends.py` | Sonos backend (SSDP/SOAP/UPnP) + the backend dispatch layer that routes each call to Sonos, Cast or this Mac (`local`), resume positions — `draai/backends.py:1-3`. |
 | `draai/listening.py` | Time listened per track: `listening.json` store, the `trackinfo.json` store (duration + last-seen per track, `note_track()`), the shared `observe()` delta-crediting helper, and the daemon watcher thread that samples every speaker group every `LISTEN_INTERVAL` (15s) — see its module docstring for the crediting rule. |
 | `draai/server.py` | HTTP `Handler` (JSON API, media serving with Range, UI serving), QR generator, built-in `PAGE` fallback — `draai/server.py:1`, `draai/server.py:286`. |
 
@@ -59,11 +60,11 @@ media, config                    (media.py:7 imports draai.state; config.py:6 im
    ↑
 library                          (library.py:5-7 imports draai.state, draai.constants)
    ↑
-analysis, cast                   (analysis.py:8-10; cast.py:11-14 — cast has no dependency on backends)
+analysis, cast, local            (analysis.py:8-10; cast.py:11-14; local.py imports state, constants, util, media, config — none depend on backends)
    ↑
 importer                         (importer.py:8-11 imports state, media, library, and re-exports from analysis)
    ↑
-backends                         (backends.py:16-26 imports state, constants, util, media, cast)
+backends                         (backends.py:16-26 imports state, constants, util, media, cast, local)
    ↑
 playlists                        (playlists.py:5-6 imports state, backends — for browse_queue)
 listening                        (imports state, constants, util, cast, backends — for get_status)

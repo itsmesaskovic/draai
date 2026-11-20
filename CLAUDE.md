@@ -47,6 +47,10 @@ reference; those docs are the full story.
   Discovery: SSDP M-SEARCH + `GetZoneGroupState` topology parsing
   (handles stereo pairs `Invisible="1"`, `<Satellite>` children, multi-unit
   rooms; bonded units get `fixed: true` and must not be ungrouped).
+- Third backend `local` (`draai/local.py`): each audio output of the Mac
+  running the engine is a room, played via ffmpeg's `audiotoolbox` output
+  (CoreAudio enumerated with `ctypes`; needs ffmpeg). Never auto-selected, no
+  grouping/EQ. See `docs/technical/mac-output.md`.
 - Track identity = first 16 hex chars of sha1(file path). Media URLs embed
   it; `GetPositionInfo`'s TrackURI is parsed back to a track id — this is
   how now-playing highlighting and resume work. Don't break URL shape.
