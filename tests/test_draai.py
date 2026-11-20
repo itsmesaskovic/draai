@@ -17,6 +17,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -351,6 +352,13 @@ class DraaiTests(unittest.TestCase):
         draai.local._available = lambda: True
         draai.local.players.clear()
         sp.config["local_volume"] = {}
+        # no TTL cache, no ffprobe, no leftover durations between tests
+        self._local_saved = (draai.local.LOCAL_REFRESH_TTL, draai.local.STALL_SECS,
+                             draai.local._probe_duration)
+        draai.local.LOCAL_REFRESH_TTL = 0.0
+        draai.local._discover_cache.update(at=None, rooms=[])
+        draai.local._durations.clear()
+        draai.local._probe_duration = lambda path: 0.0
         # config saves go to the temp dir, never the real app-support dir
         self._cfg_paths = (draai.config.CONFIG_PATH, draai.config.CONFIG_DIR)
         draai.config.CONFIG_DIR = self.tmp
@@ -362,6 +370,8 @@ class DraaiTests(unittest.TestCase):
         draai.listening._info_path[0] = os.path.join(self.tmp, "trackinfo.json")
 
     def tearDown(self):
+        (draai.local.LOCAL_REFRESH_TTL, draai.local.STALL_SECS,
+         draai.local._probe_duration) = self._local_saved
         draai.local.local_shutdown()
         draai.local.players.clear()
         draai.config.CONFIG_PATH, draai.config.CONFIG_DIR = self._cfg_paths
@@ -1987,6 +1997,171 @@ class DraaiTests(unittest.TestCase):
         draai.local.local_play_tracks(spk, ids)
         draai.local.local_shutdown()
         self.assertTrue(all(p.killed for p in spawned))
+
+    # -- local: duration probe, unplug/stall, config lock, TTL cache ----------------
+
+    def test_local_duration_probed_for_unplayed_track(self):
+        spk, ids, spawned = self._local_setup()
+        self.addCleanup(sp.positions.clear)
+        draai.local._probe_duration = lambda path: 3600.0
+        draai.local.local_play_tracks(spk, ids)
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["duration"] == "1:00:00"))
+        spawned[0].feed("out_time_us=700000000\n")
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["position"] == "0:11:40"))
+        st = draai.backends.get_status(dict(spk, backend="local"))
+        self.assertEqual(st["duration"], "1:00:00")
+        self.assertEqual(sp.positions[ids[0]], 700)
+
+    def test_local_duration_probe_failure_is_quiet(self):
+        spk, ids, spawned = self._local_setup()
+
+        def boom(path):
+            raise OSError("no ffprobe")
+        draai.local._probe_duration = boom
+        draai.local.local_play_tracks(spk, ids)
+        self.assertTrue(wait_for(lambda: not draai.local._probing))
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["state"], st["duration"]), ("PLAYING", ""))
+
+    def test_local_probe_never_runs_when_duration_known(self):
+        spk, ids, spawned = self._local_setup()
+        sp.tracks_by_id[ids[0]]["duration"] = 200
+        calls = []
+        draai.local._probe_duration = lambda path: calls.append(path) or 9.0
+        draai.local.local_play_tracks(spk, ids)
+        time.sleep(0.05)
+        self.assertEqual(calls, [])
+
+    def test_local_reap_missing_output_with_hung_process(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        pr = spawned[0]
+        pr.kill = lambda: setattr(pr, "killed", True)   # a hung ffmpeg: kill doesn't end it
+        draai.local._enumerate_coreaudio = lambda: [d for d in FAKE_DEVS if d["uid"] != "JABRA-OUT"]
+        draai.backends.refresh_local_speakers()
+        self.addCleanup(sp.speakers.clear)
+        st = draai.local.local_get_status(spk)
+        self.assertEqual(st["state"], "STOPPED")
+        self.assertEqual(st["error"], "The Jabra Link 370 is no longer connected.")
+        self.assertEqual(st["error_seq"], 1)
+        self.assertTrue(pr.killed)
+        pr.finish(-9)
+
+    def test_local_empty_enumeration_never_reaps(self):
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        draai.local._enumerate_coreaudio = lambda: []       # CoreAudio error looks like this
+        draai.backends.refresh_local_speakers()
+        self.addCleanup(sp.speakers.clear)
+        self.assertEqual(draai.local.local_get_status(spk)["state"], "PLAYING")
+
+    def test_local_stall_watchdog_halts_when_device_gone(self):
+        draai.local.STALL_SECS = 0.2
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        pr = spawned[0]
+        pr.kill = lambda: setattr(pr, "killed", True)       # never exits by itself
+        draai.local._enumerate_coreaudio = lambda: [d for d in FAKE_DEVS if d["uid"] != "JABRA-OUT"]
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["state"] == "STOPPED"))
+        self.assertTrue(pr.killed)
+        self.assertEqual(draai.local.local_get_status(spk)["error"],
+                         "The Jabra Link 370 is no longer connected.")
+        pr.finish(-9)
+
+    def test_local_stall_watchdog_skips_to_next_track(self):
+        draai.local.STALL_SECS = 0.2
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        pr = spawned[0]
+        pr.kill = lambda: setattr(pr, "killed", True)
+        self.assertTrue(wait_for(lambda: len(spawned) == 2))
+        self.assertIn("/m/t1.mp3", spawned[1].argv)
+        self.assertTrue(pr.killed)
+        pr.finish(-9)
+
+    def test_local_stall_watchdog_quiet_while_progressing_or_paused(self):
+        draai.local.STALL_SECS = 0.3
+        spk, ids, spawned = self._local_setup()
+        draai.local.local_play_tracks(spk, ids)
+        for i in range(1, 8):                               # steady progress for ~0.8 s
+            spawned[0].feed("out_time_us=%d\n" % (i * 100000))
+            time.sleep(0.1)
+        self.assertEqual(len(spawned), 1)
+        draai.local.local_cmd(spk, "pause")
+        time.sleep(0.6)                                     # paused for 2x STALL_SECS
+        st = draai.local.local_get_status(spk)
+        self.assertEqual((st["state"], st["error"]), ("PAUSED_PLAYBACK", None))
+        self.assertEqual(len(spawned), 1)
+
+    def test_local_set_volume_vs_save_config_race(self):
+        results, errors = [], []
+        players = [draai.local.LocalPlayer({"uuid": "MAC_V%d" % i, "name": "V%d" % i})
+                   for i in range(300)]
+        self.addCleanup(lambda: [t.cancel() for p in players for t in (p.vol_timer,) if t])
+        stop = threading.Event()
+
+        def saver():
+            while not stop.is_set():
+                results.append(draai.config.save_config())
+
+        def setter(chunk):
+            try:
+                for p in chunk:
+                    p.set_volume(55)
+            except Exception as e:
+                errors.append(e)
+        sv = threading.Thread(target=saver)
+        sv.start()
+        ts = [threading.Thread(target=setter, args=(players[i::4],)) for i in range(4)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        stop.set()
+        sv.join()
+        self.assertEqual(errors, [])
+        self.assertTrue(results and all(results))
+        self.assertTrue(draai.config.save_config())
+        with open(draai.config.CONFIG_PATH) as f:
+            saved = json.load(f)
+        self.assertEqual(len(saved["local_volume"]), 300)
+        self.assertEqual(saved["local_volume"]["MAC_V299"], 55)
+        self.addCleanup(sp.config.__setitem__, "local_volume", {})
+
+    def test_local_discover_ttl_cache(self):
+        calls = []
+
+        def enum():
+            calls.append(1)
+            return FAKE_DEVS
+        draai.local._enumerate_coreaudio = enum
+        draai.local.LOCAL_REFRESH_TTL = 0.2
+        self.addCleanup(sp.speakers.clear)
+        first = draai.backends.refresh_local_speakers()
+        draai.backends.refresh_local_speakers()
+        self.assertEqual(len(calls), 1)                     # within TTL: cached
+        self.assertEqual(len([s for s in sp.speakers if s["backend"] == "local"]), 4)
+        draai.local.local_discover(force=True)
+        self.assertEqual(len(calls), 2)                     # force bypasses
+        draai.backends.refresh_speakers()
+        self.assertEqual(len(calls), 3)                     # Rescan forces too
+        time.sleep(0.25)
+        draai.backends.refresh_local_speakers()
+        self.assertEqual(len(calls), 4)                     # after TTL: fresh
+
+    def test_local_available_caches_ffmpeg_lookup(self):
+        draai.local._available = sp._available              # the real one (sp snapshot predates setUp)
+        self.addCleanup(setattr, draai.local, "_available", lambda: True)
+        looks = []
+        old = draai.local.find_tool
+        draai.local.find_tool = lambda n: looks.append(n) or "/x/ffmpeg"
+        self.addCleanup(setattr, draai.local, "find_tool", old)
+        draai.local._ffmpeg_cache[:] = [0.0, False]
+        with unittest.mock.patch.object(sys, "platform", "darwin"):
+            self.assertTrue(draai.local._available())
+            self.assertTrue(draai.local._available())
+        self.assertEqual(looks, ["ffmpeg"])
+        draai.local._ffmpeg_cache[:] = [0.0, False]
 
     # -- local backend wiring ---------------------------------------------------
 

@@ -24,8 +24,23 @@ VOLUME_DEBOUNCE = 0.3       # seconds; a dragged slider restarts ffmpeg once
 FAST_FAIL_SECS = 1.0        # non-zero exit this soon after spawn = unplayable file
 
 
+LOCAL_REFRESH_TTL = 3.0     # seconds; /api/state re-enumerates CoreAudio at most this often
+FFMPEG_CACHE_TTL = 30.0     # seconds; how long a find_tool("ffmpeg") answer is trusted
+STALL_SECS = 5.0            # PLAYING with no progress this long = ffmpeg is hung
+PROBE_TIMEOUT = 10          # seconds for one ffprobe run
+
+_ffmpeg_cache = [0.0, False]            # [checked at (monotonic), found]
+
+
 def _available():
-    return sys.platform == "darwin" and find_tool("ffmpeg") is not None
+    if sys.platform != "darwin":
+        return False
+    now = time.monotonic()
+    if _ffmpeg_cache[0] and now - _ffmpeg_cache[0] < FFMPEG_CACHE_TTL:
+        return _ffmpeg_cache[1]
+    found = find_tool("ffmpeg") is not None
+    _ffmpeg_cache[0], _ffmpeg_cache[1] = now, found
+    return found
 
 
 def _enumerate_coreaudio():
@@ -133,7 +148,42 @@ def device_index(uid):
     return None
 
 
-def local_discover():
+_discover_cache = {"at": None, "rooms": []}
+_discover_lock = threading.Lock()
+
+
+def _copy_rooms(rooms):
+    return [dict(r, members=[dict(m) for m in r["members"]]) for r in rooms]
+
+
+def local_discover(force=False):
+    """Mac outputs as rooms. Re-enumerates CoreAudio at most once per
+    LOCAL_REFRESH_TTL unless `force` (Rescan). Every real enumeration also
+    halts players whose output has vanished."""
+    with _discover_lock:
+        at = _discover_cache["at"]
+        if not force and at is not None and time.monotonic() - at < LOCAL_REFRESH_TTL:
+            return _copy_rooms(_discover_cache["rooms"])
+        rooms = _discover_now()
+        _discover_cache["at"] = time.monotonic()
+        _discover_cache["rooms"] = _copy_rooms(rooms)
+    if rooms:                   # [] may just be an enumeration error: never reap on it
+        reap_missing({r["uuid"][len("MAC_"):] for r in rooms})
+    return rooms
+
+
+def reap_missing(present_uids):
+    """Halt every PLAYING/PAUSED player whose output is no longer among
+    `present_uids` (ffmpeg may hang instead of exiting when a device unplugs)."""
+    for p in list(players.values()):
+        if p.uid in present_uids:
+            continue
+        with p.lock:
+            if p.state in ("PLAYING", "PAUSED_PLAYBACK"):
+                p._halt("The %s is no longer connected." % p.name)
+
+
+def _discover_now():
     if not _available():
         return []
     out = []
@@ -193,6 +243,8 @@ class LocalPlayer:
         self.proc = None
         self.gen = 0                # bumped on every spawn/kill; stale readers do nothing
         self.spawned_at = 0.0
+        self.progress_at = 0.0      # monotonic time of the last out_time_us advance
+        self.last_us = -1
         self.fail_streak = 0
         self.error = None
         self.error_seq = 0          # bumped on every NEW error so the UI toasts each once
@@ -250,9 +302,30 @@ class LocalPlayer:
         self.start = start
         self.pos = start
         self.state = "PLAYING"
-        self.spawned_at = time.monotonic()
+        self.spawned_at = self.progress_at = time.monotonic()
+        self.last_us = -1
         gen = self.gen
         threading.Thread(target=self._reader, args=(gen, proc), daemon=True).start()
+        threading.Thread(target=self._watchdog, args=(gen, proc), daemon=True).start()
+        _probe_in_background(self.ids[self.idx], t["path"])
+
+    def _watchdog(self, gen, proc):
+        """A hung ffmpeg (e.g. its device was unplugged) never exits, so
+        _on_exit would never run: no progress for STALL_SECS = kill it and
+        handle it like a failed exit."""
+        while True:
+            time.sleep(max(0.01, min(0.5, STALL_SECS / 4.0)))
+            with self.lock:
+                if gen != self.gen or self.state != "PLAYING":
+                    return              # paused/seeked/respawned/stopped: not ours any more
+                if time.monotonic() - self.progress_at < STALL_SECS:
+                    continue
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                self._on_exit(gen, 1)
+                return
 
     def _reader(self, gen, proc):
         try:
@@ -265,6 +338,9 @@ class LocalPlayer:
                     with self.lock:
                         if gen == self.gen:
                             self.pos = self.start + max(0, us) / 1e6
+                            if us > self.last_us:
+                                self.last_us = us
+                                self.progress_at = time.monotonic()
             rc = proc.wait()
         except Exception:
             rc = proc.returncode if proc.returncode is not None else 1
@@ -320,7 +396,8 @@ class LocalPlayer:
 
     def set_volume(self, value):
         v = max(0, min(100, int(float(value))))
-        config.setdefault("local_volume", {})[self.uuid] = v
+        with _config.config_lock:
+            config.setdefault("local_volume", {})[self.uuid] = v
         with self.lock:
             if self.vol_timer:
                 self.vol_timer.cancel()
@@ -562,6 +639,53 @@ def local_cmd(spk, action, value=None):
         raise RuntimeError(_CANT_CMD)
 
 
+_durations = {}             # tid -> seconds, from ffprobe
+_probing = set()
+_probe_lock = threading.Lock()
+
+
+def _probe_duration(path):
+    """Seconds via ffprobe, 0.0 when it's missing or fails. (The analysis
+    cache holds a duration too, but local.py must not import analysis.)"""
+    ffprobe = find_tool("ffprobe")
+    if not ffprobe:
+        return 0.0
+    try:
+        r = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
+                            "-of", "default=nw=1:nk=1", path],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                           timeout=PROBE_TIMEOUT)
+        d = float(r.stdout.strip().splitlines()[0])
+        return d if d > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _probe_in_background(tid, path):
+    """If the duration of `tid` is unknown, learn it off-thread (never under
+    the player lock, never in a request)."""
+    if _duration_sec(tid) > 0:
+        return None
+    with _probe_lock:
+        if tid in _probing:
+            return None
+        _probing.add(tid)
+
+    def run():
+        try:
+            d = float(_probe_duration(path) or 0.0)
+            if d > 0:
+                _durations[tid] = d
+        except Exception:
+            pass
+        finally:
+            with _probe_lock:
+                _probing.discard(tid)
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    return th
+
+
 def _duration_sec(tid):
     t = tracks_by_id.get(tid) or {}
     d = t.get("duration")
@@ -570,7 +694,7 @@ def _duration_sec(tid):
     d = (trackinfo.get(tid) or {}).get("dur")
     if isinstance(d, (int, float)) and d > 0:
         return float(d)
-    return 0.0
+    return _durations.get(tid, 0.0)
 
 
 def local_get_status(spk):

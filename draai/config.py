@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 
 from draai.constants import CONFIG_PATH, CONFIG_DIR
 from draai.state import config
@@ -23,15 +24,29 @@ def load_config():
             config[k] = saved[k]
 
 
-_save_lock = threading.Lock()
+# Re-entrant and public: code that mutates `config` while saves may run takes
+# it too (so json.dumps never sees a dict change size mid-iteration).
+config_lock = threading.RLock()
+_save_lock = config_lock                # old name
+
+
+def _snapshot():
+    for attempt in range(3):
+        try:
+            return json.dumps(config, indent=2)
+        except RuntimeError:            # an unlocked mutator resized a dict
+            if attempt == 2:
+                raise
+            time.sleep(0.005)
 
 
 def save_config():
-    """Atomic and serialised: concurrent callers can't truncate config.json."""
-    with _save_lock:
+    """Atomic and serialised: concurrent callers can't truncate config.json.
+    Returns True when the file was written."""
+    with config_lock:
         tmp = None
         try:
-            data = json.dumps(config, indent=2)     # snapshot while no one else saves
+            data = _snapshot()
             os.makedirs(CONFIG_DIR, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH) or ".",
                                        prefix=".config-", suffix=".tmp")
@@ -39,8 +54,9 @@ def save_config():
                 f.write(data)
             os.replace(tmp, CONFIG_PATH)
             tmp = None
+            return True
         except Exception:
-            pass
+            return False
         finally:
             if tmp:
                 try:

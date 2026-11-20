@@ -31,6 +31,14 @@ splices the `local` entries after the Sonos/Cast ones. The UI re-fetches state
 every ~10 s. The ffmpeg device index is looked up again right before every
 spawn, never cached.
 
+**TTL cache:** `local_discover()` re-enumerates CoreAudio at most once per
+`LOCAL_REFRESH_TTL` (3 s, monotonic clock), so a polling UI is cheap. Rescan
+(`refresh_speakers`) passes `force=True`. `_available()` caches its
+`find_tool("ffmpeg")` answer for 30 s. Each real enumeration also runs
+`reap_missing()`: a PLAYING/PAUSED player whose UID is gone is halted with "The
+<device> is no longer connected." (never on an empty enumeration, which may be
+a CoreAudio error).
+
 ## Playback
 
 ffmpeg reads the track file directly (no HTTP):
@@ -53,6 +61,19 @@ ffmpeg reads the track file directly (no HTTP):
   are never touched.
 - Resume positions use `note_position()` from `get_status` and the usual
   `RESUME_MIN_POS` rule on start. Sleep timer = engine timer that stops.
+- **Stall watchdog:** a hung ffmpeg (device unplugged) may never exit. A
+  per-spawn watchdog thread kills the process if PLAYING and `out_time_us` has
+  not advanced for `STALL_SECS` (5 s), then runs the normal non-zero-exit path
+  (device gone -> "no longer connected", else skip). It is tied to the
+  generation counter, so pause/seek/volume respawns retire it.
+- **Duration probe:** library tracks carry no duration, so when a track
+  starts with an unknown one, a background thread runs
+  `ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1`
+  (10 s timeout; `_probe_duration`, cached in `_durations`). Status then
+  reports `duration`, and `observe` -> `note_track` stores it as usual. No
+  analysis-cache fallback: `local.py` may not import `analysis`.
+- Config: `set_volume` mutates `config["local_volume"]` under
+  `config.config_lock`, which `save_config` also holds.
 - Exit: `local_shutdown()` (atexit + Ctrl+C path) kills every child.
 
 ## Error sentences

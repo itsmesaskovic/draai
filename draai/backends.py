@@ -111,7 +111,7 @@ def refresh_speakers():
     except Exception:
         cast = []
     try:
-        mac = local_discover()
+        mac = local_discover(force=True)        # Rescan bypasses the TTL cache
     except Exception:
         mac = []
     merged = sonos + cast + mac
