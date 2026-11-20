@@ -14,7 +14,7 @@ import urllib.request
 from html import escape as xml_escape, unescape as xml_unescape
 from xml.etree import ElementTree
 
-from draai import state, cast
+from draai import state, cast, local
 from draai.state import (speakers, tracks, tracks_by_id, config, positions,
                          positions_lock, _positions_dirty, state_lock, enqueue_generation)
 from draai.constants import (AUDIO_EXTS, QUEUE_CAP, RESUME_MIN_TRACK, RESUME_MIN_POS,
@@ -25,6 +25,10 @@ from draai.cast import (cast_play_tracks, cast_get_status, cast_set_volume,
                         cast_seek_to, cast_set_shuffle, cast_browse_queue,
                         cast_enqueue_tracks, cast_queue_move, cast_queue_jump,
                         cast_queue_remove, cast_set_room_volume, cast_cmd, cast_discover)
+from draai.local import (local_play_tracks, local_get_status, local_set_volume,
+                         local_seek_to, local_set_shuffle, local_browse_queue,
+                         local_enqueue_tracks, local_queue_move, local_queue_jump,
+                         local_queue_remove, local_discover)
 
 
 SSDP_ADDR = ("239.255.255.250", 1900)
@@ -106,7 +110,11 @@ def refresh_speakers():
         cast = cast_discover()
     except Exception:
         cast = []
-    merged = sonos + cast
+    try:
+        mac = local_discover()
+    except Exception:
+        mac = []
+    merged = sonos + cast + mac
     with state_lock:
         speakers[:] = merged
     if merged:
@@ -116,6 +124,17 @@ def refresh_speakers():
     return [], ("No speakers found. Make sure this Mac is on the same "
                 "Wi-Fi network as the speakers, then press Rescan. "
                 "You can also add a speaker by its IP address.")
+
+
+def refresh_local_speakers():
+    """Cheap hot-plug refresh: re-enumerate this Mac's outputs and splice them
+    in after the Sonos/Cast entries, leaving those untouched."""
+    try:
+        mac = local_discover()
+    except Exception:
+        mac = []
+    with state_lock:
+        speakers[:] = [s for s in speakers if s.get("backend") != "local"] + mac
 
 
 def get_zone_groups(any_ip):
@@ -264,6 +283,8 @@ def play_tracks(spk, ids):
     """Replace the speaker queue with `ids` and start playing the first."""
     if spk.get("backend") == "cast":
         return cast_play_tracks(spk, ids)
+    if spk.get("backend") == "local":
+        return local_play_tracks(spk, ids)
     track_list = []
     with state_lock:
         for tid in ids[:QUEUE_CAP]:
@@ -374,6 +395,12 @@ def note_position(tid, pos_sec, dur_sec):
 def get_status(spk):
     if spk.get("backend") == "cast":
         return cast_get_status(spk)
+    if spk.get("backend") == "local":
+        out = local_get_status(spk)
+        pos, dur = hms_to_sec(out.get("position") or ""), hms_to_sec(out.get("duration") or "")
+        if out.get("track_id") and pos > 0 and dur > 0:
+            note_position(out["track_id"], pos, dur)
+        return out
     ip = spk["ip"]
     out = {"state": "UNKNOWN", "title": "", "position": "", "duration": "",
            "volume": None, "track_no": None, "track_id": None}
@@ -431,6 +458,8 @@ def get_status(spk):
 def set_volume(spk, value):
     if spk.get("backend") == "cast":
         return cast_set_volume(spk, value)
+    if spk.get("backend") == "local":
+        return local_set_volume(spk, value)
     value = max(0, min(100, int(value)))
     ip = spk["ip"]
     try:
@@ -445,6 +474,8 @@ def set_volume(spk, value):
 def set_shuffle(spk, on):
     if spk.get("backend") == "cast":
         return cast_set_shuffle(spk, on)
+    if spk.get("backend") == "local":
+        return local_set_shuffle(spk, on)
     avt(spk["ip"], "SetPlayMode",
         {"NewPlayMode": "SHUFFLE_NOREPEAT" if on else "NORMAL"})
 
@@ -452,6 +483,8 @@ def set_shuffle(spk, on):
 def seek_to(spk, seconds):
     if spk.get("backend") == "cast":
         return cast_seek_to(spk, seconds)
+    if spk.get("backend") == "local":
+        return local_seek_to(spk, seconds)
     avt(spk["ip"], "Seek", {"Unit": "REL_TIME", "Target": sec_to_hms(seconds)})
 
 
@@ -473,6 +506,8 @@ def browse_queue(spk):
     """Return (items, total) for the speaker's current queue."""
     if spk.get("backend") == "cast":
         return cast_browse_queue(spk)
+    if spk.get("backend") == "local":
+        return local_browse_queue(spk)
     body = soap_call(spk["ip"], CD[0], CD[1], "Browse", {
         "ObjectID": "Q:0", "BrowseFlag": "BrowseDirectChildren",
         "Filter": "dc:title", "StartingIndex": 0,
@@ -503,6 +538,8 @@ def queue_move(spk, from_no, to_no):
     stands BEFORE removal, hence the +1 when moving downward."""
     if spk.get("backend") == "cast":
         return cast_queue_move(spk, from_no, to_no)
+    if spk.get("backend") == "local":
+        return local_queue_move(spk, from_no, to_no)
     from_no, to_no = int(from_no), int(to_no)
     if from_no == to_no:
         return
@@ -515,6 +552,8 @@ def queue_move(spk, from_no, to_no):
 def queue_jump(spk, no):
     if spk.get("backend") == "cast":
         return cast_queue_jump(spk, no)
+    if spk.get("backend") == "local":
+        return local_queue_jump(spk, no)
     ip, uuid = spk["ip"], spk["uuid"]
     avt(ip, "SetAVTransportURI", {
         "CurrentURI": "x-rincon-queue:%s#0" % uuid, "CurrentURIMetaData": ""})
@@ -525,6 +564,8 @@ def queue_jump(spk, no):
 def queue_remove(spk, no):
     if spk.get("backend") == "cast":
         return cast_queue_remove(spk, no)
+    if spk.get("backend") == "local":
+        return local_queue_remove(spk, no)
     avt(spk["ip"], "RemoveTrackFromQueue",
         {"ObjectID": "Q:0/%d" % int(no), "UpdateID": 0})
 
@@ -534,6 +575,8 @@ def enqueue_tracks(spk, ids, play_next=False):
     block right after the currently playing track, order preserved."""
     if spk.get("backend") == "cast":
         return cast_enqueue_tracks(spk, ids, play_next)
+    if spk.get("backend") == "local":
+        return local_enqueue_tracks(spk, ids, play_next)
     track_list = []
     with state_lock:
         for tid in ids[:QUEUE_CAP]:
@@ -607,6 +650,8 @@ def enqueue_tracks(spk, ids, play_next=False):
 
 
 def get_eq(spk):
+    if spk.get("backend") == "local":
+        raise RuntimeError("The equalizer isn't available for outputs on this Mac.")
     if spk.get("backend") == "cast":
         raise RuntimeError("The equalizer isn't available on Chromecast.")
     ip = spk["ip"]
@@ -624,6 +669,8 @@ def get_eq(spk):
 
 
 def set_eq(spk, bass=None, treble=None, loudness=None):
+    if spk.get("backend") == "local":
+        raise RuntimeError("The equalizer isn't available for outputs on this Mac.")
     if spk.get("backend") == "cast":
         raise RuntimeError("The equalizer isn't available on Chromecast.")
     ip = spk["ip"]
@@ -661,6 +708,8 @@ def zone_by_uuid(zuuid):
 
 def group_join(member_uuid, coordinator_uuid):
     _m = speaker_by_uuid(member_uuid)
+    if _m and _m.get("backend") == "local":
+        raise RuntimeError("Outputs on this Mac can't be grouped.")
     if _m and _m.get("backend") == "cast":
         raise RuntimeError("Grouping isn't available on Chromecast from DRAAI.")
     zone = zone_by_uuid(member_uuid)
@@ -675,6 +724,8 @@ def group_join(member_uuid, coordinator_uuid):
 
 def group_leave(member_uuid):
     _m = speaker_by_uuid(member_uuid)
+    if _m and _m.get("backend") == "local":
+        raise RuntimeError("Outputs on this Mac can't be grouped.")
     if _m and _m.get("backend") == "cast":
         raise RuntimeError("Grouping isn't available on Chromecast from DRAAI.")
     zone = zone_by_uuid(member_uuid)
@@ -686,6 +737,10 @@ def group_leave(member_uuid):
 
 
 def get_rooms(spk):
+    if spk.get("backend") == "local":
+        m = (spk.get("members") or [spk])[0]
+        return [{"uuid": m["uuid"], "name": m["name"], "ip": None,
+                 "volume": local_get_status(spk).get("volume"), "fixed": True}]
     rooms = []
     for m in spk.get("members", []):
         vol = None
@@ -704,6 +759,8 @@ def get_rooms(spk):
 
 def set_room_volume(member_uuid, value):
     _m = speaker_by_uuid(member_uuid)
+    if _m and _m.get("backend") == "local":
+        return local_set_volume(_m, value)
     if _m and _m.get("backend") == "cast":
         return cast_set_room_volume(_m, value)
     zone = zone_by_uuid(member_uuid)

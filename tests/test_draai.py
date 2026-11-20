@@ -1988,6 +1988,97 @@ class DraaiTests(unittest.TestCase):
         draai.local.local_shutdown()
         self.assertTrue(all(p.killed for p in spawned))
 
+    # -- local backend wiring ---------------------------------------------------
+
+    def test_local_refresh_splices_without_touching_sonos(self):
+        son = {"uuid": "RINCON_A", "name": "Kantoor", "ip": "192.168.1.50", "backend": "sonos"}
+        sp.speakers[:] = [son]
+        self.addCleanup(sp.speakers.clear)
+        draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
+        draai.backends.refresh_local_speakers()
+        self.assertEqual(sp.speakers[0], son)
+        self.assertEqual([s["backend"] for s in sp.speakers], ["sonos"] + ["local"] * 4)
+        draai.local._enumerate_coreaudio = lambda: [d for d in FAKE_DEVS if d["uid"] != "JABRA-OUT"]
+        draai.backends.refresh_local_speakers()
+        self.assertEqual(sp.speakers[0], son)
+        self.assertNotIn("MAC_JABRA-OUT", [s["uuid"] for s in sp.speakers])
+        self.assertEqual(len(sp.speakers), 4)
+
+    def test_local_only_is_not_no_speakers(self):
+        draai.backends.ssdp_discover = lambda timeout=3.0: set()
+        draai.local._enumerate_coreaudio = lambda: FAKE_DEVS
+        found, err = draai.backends.refresh_speakers()
+        self.assertEqual((len(found), err), (4, None))
+
+    def test_local_dispatch_play_and_cmd(self):
+        make_mp3(os.path.join(self.tmp, "l.mp3"), "L-Track")
+        sp.scan_all()
+        spk, _ids, spawned = self._local_setup(n_tracks=0)
+        sp.speakers[:] = [dict(spk, members=[])]
+        self.addCleanup(sp.speakers.clear)
+        draai.server.prefetch_analysis = lambda ids: None
+        tid = sp.tracks[0]["id"]
+        httpd = sp.ThreadingHTTPServer(("127.0.0.1", 0), sp.Handler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            def post(path, body):
+                req = urllib.request.Request(
+                    "http://127.0.0.1:%d%s" % (port, path), data=json.dumps(body).encode(),
+                    headers=self._good_headers(port))
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return json.load(r)
+
+            def status():
+                with urllib.request.urlopen(
+                        "http://127.0.0.1:%d/api/status?speaker=MAC_JABRA-OUT" % port, timeout=5) as r:
+                    return json.load(r)
+            post("/api/play", {"speaker": "MAC_JABRA-OUT", "ids": [tid]})
+            self.assertEqual(len(spawned), 1)
+            self.assertEqual(status()["state"], "PLAYING")
+            post("/api/cmd", {"speaker": "MAC_JABRA-OUT", "action": "pause"})
+            self.assertEqual(status()["state"], "PAUSED_PLAYBACK")
+            self.assertEqual(post("/api/cmd", {"speaker": "MAC_JABRA-OUT", "action": "sleep", "value": 5}),
+                             {"ok": True})
+            draai.local.players["MAC_JABRA-OUT"].set_sleep(0)      # don't leave the timer running
+            self.assertEqual(self.soap.calls, [])
+        finally:
+            httpd.shutdown()
+
+    def test_local_eq_and_group_refuse_with_sentence(self):
+        spk = {"uuid": "MAC_JABRA-OUT", "name": "Jabra Link 370", "ip": None, "backend": "local"}
+        with self.assertRaises(RuntimeError) as cm:
+            draai.backends.get_eq(spk)
+        self.assertEqual(str(cm.exception), "The equalizer isn't available for outputs on this Mac.")
+        sp.speakers[:] = [dict(spk, members=[])]
+        self.addCleanup(sp.speakers.clear)
+        with self.assertRaises(RuntimeError) as cm:
+            draai.backends.group_join("MAC_JABRA-OUT", "RINCON_X")
+        self.assertEqual(str(cm.exception), "Outputs on this Mac can't be grouped.")
+
+    def test_local_status_notes_position(self):
+        spk, ids, spawned = self._local_setup()
+        sp.tracks_by_id[ids[0]]["duration"] = 3600
+        draai.local.local_play_tracks(spk, ids)
+        spawned[0].feed("out_time_us=700000000\n")
+        self.assertTrue(wait_for(lambda: draai.local.local_get_status(spk)["position"] == "0:11:40"))
+        self.addCleanup(sp.positions.clear)
+        st = draai.backends.get_status(dict(spk, backend="local"))
+        self.assertEqual(st["track_id"], ids[0])
+        self.assertEqual(sp.positions[ids[0]], 700)
+
+    def test_watcher_skips_idle_local(self):
+        L = draai.listening
+        spk = {"uuid": "MAC_JABRA-OUT", "name": "Jabra", "ip": None, "backend": "local"}
+        old_status, old_speakers = L.get_status, list(sp.speakers)
+        L.get_status = lambda s: self.fail("asked an idle Mac output")
+        sp.speakers[:] = [spk]
+        try:
+            L.watch_once(now=time.monotonic())
+        finally:
+            L.get_status = old_status
+            sp.speakers[:] = old_speakers
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
