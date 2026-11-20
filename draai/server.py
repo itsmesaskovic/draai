@@ -1156,7 +1156,7 @@ async function loadState() {
   const st = await api("/api/state");
   $("folder").value = st.folder || "";
   fillSpeakers(st.speakers || [], st.last_speaker);
-  if (!(st.speakers || []).length) rescanSpeakers();
+  if (!(st.speakers || []).some(s => s.backend !== 'local')) rescanSpeakers();
   if (st.track_count > 0) loadTracks();
   else if (st.folder) scanFolder();   // first run: try the default folder
 }
