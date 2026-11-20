@@ -10,7 +10,7 @@ const NPV={ id:null, gen:0, streams:[], cur:-1, errors:0, failed:null, shown:fal
   playT:0, winT:0, q:null, lastT:0, waiting:false, waits:0, bufT:0, okT:0, maxH:Infinity };
 function npVideoEl(){ return $("#npVideo"); }
 function npVideoWanted(){
-  if(DEMO || VINYL || A.curId==null || !$("#np").classList.contains("open")) return null;
+  if(DEMO || VINYL || A.curId==null || document.hidden || !$("#np").classList.contains("open")) return null;
   const t=A.tracks.find(x=>String(x.id)===String(A.curId));
   return (t && t.has_video) ? String(A.curId) : null;
 }
@@ -55,6 +55,9 @@ function npVideoUpdate(){
   npVideoUnload();
   if(want==null || NPV.failed===want) return;
   NPV.id=want; npVideoStart(want); }
+/* a hidden page (other tab, other app, locked screen) drops the video so it stops
+   downloading; coming back loads it again and the sync seeks to the audio */
+document.addEventListener("visibilitychange",()=>npVideoUpdate());
 async function npVideoError(){
   const id=NPV.id; if(id==null || NPV.cur<0) return;
   NPV.errors++;
