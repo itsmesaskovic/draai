@@ -28,6 +28,13 @@
 .room .gbtn{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--dim);flex:none}
 .room .gbtn:hover{color:var(--tx);background:var(--panel2)}
 .room .gbtn .ic{width:16px;height:16px}
+.room .rtog .ic{transition:transform .2s}
+.room .rtog.open .ic{transform:rotate(180deg)}
+.room.rrow{background:transparent}
+.room.rrow:hover{background:var(--panel)}
+.room.rrow .head{padding:8px 12px}
+.room.rrow .txt{display:flex;align-items:center}
+.room.rrow .txt b{display:inline;font-weight:500;min-width:0}
 .members{display:flex;flex-direction:column;border-top:1px solid var(--line)}
 .member{display:flex;align-items:center;gap:10px;padding:10px 12px 10px 22px;position:relative}
 .member::before{content:"";position:absolute;left:14px;top:0;bottom:50%;width:9px;border-left:1.5px solid var(--line2);border-bottom:1.5px solid var(--line2);border-bottom-left-radius:6px}

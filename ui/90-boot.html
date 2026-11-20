@@ -102,21 +102,28 @@ async function enqueue(ids){ if(!A.speaker)return toast("Select a room first.");
 /* ---------------- rooms / grouping ---------------- */
 function renderRooms(){ const list=$("#roomList");
   if(!A.speakers.length){ list.innerHTML=`<div style="color:var(--dim2);font-size:12px;padding:6px 12px">No rooms found. Rescan or add an IP.</div>`; return; }
-  list.innerHTML=A.speakers.map(g=>{ const on=A.speaker&&A.speaker.uuid===g.uuid, members=g.members||[{uuid:g.uuid,name:g.name,ip:g.ip}];
+  const many=A.speakers.length>1, open=many&&(A.roomsOpen||!A.speaker);   // nothing selected: nothing to collapse to
+  const rank=g=>g.backend==="local"?2:g.backend==="cast"?1:0;
+  const act=A.speaker&&A.speakers.find(s=>s.uuid===A.speaker.uuid);
+  const others=A.speakers.filter(g=>g!==act).map((g,i)=>[g,i]).sort((x,y)=>rank(x[0])-rank(y[0])||x[1]-y[1]).map(x=>x[0]);
+  const badge=g=>g.backend==="cast"?`<span class="castbadge">Cast</span>`:g.backend==="local"?`<span class="castbadge">Mac</span>`:"";
+  const card=g=>{ const members=g.members||[{uuid:g.uuid,name:g.name,ip:g.ip}];
     const grouped=members.length>1; const isCast=g.backend==="cast", isLocal=g.backend==="local";
-    return `<div class="room ${on?"on":""}" data-room="${g.uuid}">
+    return `<div class="room on" data-room="${g.uuid}">
       <div class="head" data-select="${g.uuid}">
         <span class="dot"></span>
-        <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${isCast?`<span class="castbadge">Cast</span>`:""}${isLocal?`<span class="castbadge">Mac</span>`:""}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):(isLocal?"This Mac":esc(g.ip||""))}</small></span>
+        <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${badge(g)}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):(isLocal?"This Mac":esc(g.ip||""))}</small></span>
         ${isCast||isLocal?"":`<button class="gbtn" data-group="${g.uuid}" title="Group rooms"><svg class="ic" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M4 4h6v6H4zM14 14h6v6h-6z"/></svg></button>`}
+        ${many?`<button class="gbtn rtog${open?" open":""}" data-roomtoggle="1" aria-expanded="${open}" title="${open?"Hide other rooms":"Show other rooms"}"><svg class="ic" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>`:""}
       </div>
-      ${grouped?`<div class="members">${members.map(m=>`<div class="member">
+      ${grouped&&!open?`<div class="members">${members.map(m=>`<div class="member">
         <small>${esc(m.name)}</small>
         <input type="range" class="slider" data-roomvol="${m.uuid}" min="0" max="100" value="${m.volume!=null?m.volume:30}">
         ${members.length>1&&!m.fixed?`<button class="drop" data-ungroup="${m.uuid}" title="Remove from group"><svg class="ic" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6l12 12"/></svg></button>`:""}
       </div>`).join("")}</div>`:""}
-    </div>`;
-  }).join("");
+    </div>`; };
+  const row=g=>`<div class="room rrow" data-room="${g.uuid}"><div class="head" data-select="${g.uuid}"><span class="dot"></span><span class="txt"><b>${esc(g.name)}</b>${badge(g)}</span></div></div>`;
+  list.innerHTML=(act?card(act):"")+(open||!act?others.map(row).join(""):"");
   $$("#roomList [data-roomvol]").forEach(el=>setSlider(el,+el.value));
 }
 function applyBackendUI(){
@@ -126,7 +133,7 @@ function applyBackendUI(){
   if(npeq) npeq.style.display = cast ? "none" : "";
   if(cast) $("#eqPop").classList.remove("open");
 }
-async function selectRoom(uuid){ A.lastErrSeq=null; A.lastErr=undefined; A.speaker=A.speakers.find(s=>s.uuid===uuid)||A.speaker; renderRooms(); applyBackendUI();
+async function selectRoom(uuid){ A.roomsOpen=false; A.lastErrSeq=null; A.lastErr=undefined; A.speaker=A.speakers.find(s=>s.uuid===uuid)||A.speaker; renderRooms(); applyBackendUI();
   A.queueIds=[]; A.curId=null; startPolling(); loadEq(); await loadRoomVolumes(); }
 async function loadRoomVolumes(){ if(!A.speaker)return; try{ const r=await api("/api/rooms?speaker="+enc(A.speaker.uuid));
   const g=A.speakers.find(s=>s.uuid===A.speaker.uuid); if(g&&r.rooms){ g.members=r.rooms.map(rm=>({uuid:rm.uuid,name:rm.name,ip:rm.ip,volume:rm.volume,fixed:rm.fixed})); renderRooms(); } }catch(e){} }
@@ -356,7 +363,8 @@ function wire(){
     if(rm){ e.stopPropagation(); guard(async()=>{ await api("/api/queue_remove",{speaker:A.speaker.uuid,no:+rm.dataset.remove}); poll(); }); return; }
     if(ung){ e.stopPropagation(); guard(async()=>{ const r=await api("/api/ungroup",{member:ung.dataset.ungroup}); if(r&&r.speakers)A.speakers=r.speakers; else await refreshState(); renderRooms(); }); return; }
     if(grp){ e.stopPropagation(); openGroupPop(grp.dataset.group,grp); return; }
-    if(sel){ selectRoom(sel.dataset.select); return; }
+    if(t("[data-roomtoggle]")){ e.stopPropagation(); A.roomsOpen=!A.roomsOpen; renderRooms(); return; }
+    if(sel){ if(A.speaker&&sel.dataset.select===A.speaker.uuid){ if(A.speakers.length>1){ A.roomsOpen=!A.roomsOpen; renderRooms(); } } else selectRoom(sel.dataset.select); return; }
     if(tog){ toggleGroup(tog.dataset.toggle); return; }
     if(slp){ A.sleepMin=+slp.dataset.sleep; renderSleep(); cmd("sleep",A.sleepMin); return; }
     if(play){ playTracks([play.dataset.play]); return; }
@@ -428,7 +436,7 @@ function wire(){
   $("#trebleSlider").addEventListener("input",e=>{ A.eq.treble=+e.target.value; $("#trebleVal").textContent=(A.eq.treble>0?"+":"")+A.eq.treble; pushEq(); });
   $("#loudToggle").addEventListener("click",()=>{ A.eq.loudness=!A.eq.loudness; $("#loudToggle").classList.toggle("on",A.eq.loudness); pushEq(); });
   // discovery / folder / yt
-  $("#rescanBtn").addEventListener("click",()=>guard(async()=>{ const r=await api("/api/rescan_speakers",{}); await refreshState(); if(r&&r.error)toast(r.error); else toast("Rooms refreshed",true); }));
+  $("#rescanBtn").addEventListener("click",()=>guard(async()=>{ const r=await api("/api/rescan_speakers",{}); A.roomsOpen=false; await refreshState(); renderRooms(); if(r&&r.error)toast(r.error); else toast("Rooms refreshed",true); }));
   $("#addIpBtn").addEventListener("click",()=>{ const ip=$("#ipInput").value.trim(); if(!ip)return; guard(async()=>{ const r=await api("/api/add_ip",{ip}); $("#ipInput").value=""; await refreshState(); if(r&&r.error)toast(r.error); else toast("Speaker added",true); }); });
   $("#ipInput").addEventListener("keydown",e=>{ if(e.key==="Enter")$("#addIpBtn").click(); });
   
