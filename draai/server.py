@@ -1143,6 +1143,11 @@ function fillSpeakers(list, keep) {
     sel.appendChild(o);
   }
   if (keep && list.some(s => s.uuid === keep)) sel.value = keep;
+  // never default to a Mac output: only the remembered room, else the first network room
+  if (!(keep && list.some(s => s.uuid === keep))) {
+    const first = list.find(s => s.backend !== "local");
+    sel.value = first ? first.uuid : "";
+  }
   currentSpeaker = sel.value;
   restartStatus();
 }

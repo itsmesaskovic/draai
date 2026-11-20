@@ -1,5 +1,6 @@
 /* ---------------- status ---------------- */
 function applyStatus(s,tSend,tRecv){ A.status=s||A.status; const st=A.status.state;
+  const err=A.status.error||null; if(err&&err!==A.lastErr) toast(err); A.lastErr=err;
   durSec=parseTime(A.status.duration); const exact=typeof A.status.pos==="number" && isFinite(A.status.pos);
   const np=exact ? A.status.pos : parseTime(A.status.position);
   const wasPlaying=playing;
@@ -99,12 +100,12 @@ async function enqueue(ids){ if(!A.speaker)return toast("Select a room first.");
 function renderRooms(){ const list=$("#roomList");
   if(!A.speakers.length){ list.innerHTML=`<div style="color:var(--dim2);font-size:12px;padding:6px 12px">No rooms found. Rescan or add an IP.</div>`; return; }
   list.innerHTML=A.speakers.map(g=>{ const on=A.speaker&&A.speaker.uuid===g.uuid, members=g.members||[{uuid:g.uuid,name:g.name,ip:g.ip}];
-    const grouped=members.length>1; const isCast=g.backend==="cast";
+    const grouped=members.length>1; const isCast=g.backend==="cast", isLocal=g.backend==="local";
     return `<div class="room ${on?"on":""}" data-room="${g.uuid}">
       <div class="head" data-select="${g.uuid}">
         <span class="dot"></span>
-        <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${isCast?`<span class="castbadge">Cast</span>`:""}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):esc(g.ip||"")}</small></span>
-        ${isCast?"":`<button class="gbtn" data-group="${g.uuid}" title="Group rooms"><svg class="ic" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M4 4h6v6H4zM14 14h6v6h-6z"/></svg></button>`}
+        <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${isCast?`<span class="castbadge">Cast</span>`:""}${isLocal?`<span class="castbadge">Mac</span>`:""}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):(isLocal?"This Mac":esc(g.ip||""))}</small></span>
+        ${isCast||isLocal?"":`<button class="gbtn" data-group="${g.uuid}" title="Group rooms"><svg class="ic" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M4 4h6v6H4zM14 14h6v6h-6z"/></svg></button>`}
       </div>
       ${grouped?`<div class="members">${members.map(m=>`<div class="member">
         <small>${esc(m.name)}</small>
@@ -116,7 +117,7 @@ function renderRooms(){ const list=$("#roomList");
   $$("#roomList [data-roomvol]").forEach(el=>setSlider(el,+el.value));
 }
 function applyBackendUI(){
-  const cast = !!(A.speaker && A.speaker.backend === "cast");
+  const cast = !!(A.speaker && (A.speaker.backend === "cast" || A.speaker.backend === "local"));
   const eq = $("#eqBtn"), npeq = $("#npEq");
   if(eq) eq.style.display = cast ? "none" : "";
   if(npeq) npeq.style.display = cast ? "none" : "";
@@ -464,8 +465,12 @@ async function refreshState(){ const s=await api("/api/state"); A.speakers=s.spe
   A.folders=s.folders||(s.folder?[s.folder]:[]); renderFolders(); $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks";
   const vl=$("#verLine"); if(vl && s.version){ vl.textContent="v"+s.version;
     vl.title=s.install==="homebrew"?"Installed with Homebrew. Update with: brew upgrade draai":"DRAAI "+s.version; }
-  if(!A.speaker && A.speakers.length){ A.speaker=A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers[0]; applyBackendUI(); }
-  renderRooms(); }
+  /* Never auto-select a Mac output: last choice if still around, else the first network room. */
+  const pick=()=>A.speakers.find(x=>x.uuid===s.last_speaker)||A.speakers.find(x=>x.backend!=="local")||null;
+  let gone=false;
+  if(A.speaker && !A.speakers.some(x=>x.uuid===A.speaker.uuid)){ gone=A.speaker.backend==="local"; if(gone){ A.speaker=null; clearInterval(pollTimer); } }
+  if(!A.speaker && A.speakers.length){ A.speaker=pick(); if(A.speaker) applyBackendUI(); }
+  renderRooms(); return gone; }
 async function refreshTracks(){ await guard(async()=>{ const d=await api("/api/tracks?q="); A.tracks=d.tracks||[]; A.trackCount=d.total??A.tracks.length;
   $("#trackCount").textContent=(A.trackCount||0).toLocaleString()+" tracks"; renderContent(); npVideoUpdate(); }); loadMostPlayed(); }
 
@@ -583,6 +588,11 @@ async function boot(){
       if(A.speakers.length&&A.speaker){selectRoom(A.speaker.uuid);}
     },2500);
   }
+  if(!DEMO) setInterval(async()=>{                      // Mac outputs come and go (headset plugged in/out)
+    const had=A.speaker; let gone=false;
+    try{ gone=await refreshState(); }catch(e){ return; }
+    if(A.speaker && (!had || gone)) selectRoom(A.speaker.uuid);
+  },10000);
   loadYt();
   await refreshTracks();
   loadAccess();
