@@ -100,7 +100,8 @@ async function enqueue(ids){ if(!A.speaker)return toast("Select a room first.");
   await guard(async()=>{ await api("/api/enqueue",{speaker:A.speaker.uuid,ids}); A.queueIds.push(...ids); poll(); toast("Added to queue",true); }); }
 
 /* ---------------- rooms / grouping ---------------- */
-function renderRooms(){ const list=$("#roomList");
+function renderRooms(){ const list=$("#roomList"), tog=$("#roomTog");
+  if(tog) tog.innerHTML="";
   if(!A.speakers.length){ list.innerHTML=`<div style="color:var(--dim2);font-size:12px;padding:6px 12px">No rooms found. Rescan or add an IP.</div>`; return; }
   const many=A.speakers.length>1, open=many&&(A.roomsOpen||!A.speaker);   // nothing selected: nothing to collapse to
   const rank=g=>g.backend==="local"?2:g.backend==="cast"?1:0;
@@ -114,7 +115,6 @@ function renderRooms(){ const list=$("#roomList");
         <span class="dot"></span>
         <span class="txt"><b>${esc(g.name)}${grouped?` +${members.length-1}`:""}</b>${badge(g)}<small>${grouped?members.map(m=>esc(m.name)).join(" · "):(isLocal?"This Mac":esc(g.ip||""))}</small></span>
         ${isCast||isLocal?"":`<button class="gbtn" data-group="${g.uuid}" title="Group rooms"><svg class="ic" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8M4 4h6v6H4zM14 14h6v6h-6z"/></svg></button>`}
-        ${many?`<button class="gbtn rtog${open?" open":""}" data-roomtoggle="1" aria-expanded="${open}" title="${open?"Hide other rooms":"Show other rooms"}"><svg class="ic" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>`:""}
       </div>
       ${grouped&&!open?`<div class="members">${members.map(m=>`<div class="member">
         <small>${esc(m.name)}</small>
@@ -123,6 +123,7 @@ function renderRooms(){ const list=$("#roomList");
       </div>`).join("")}</div>`:""}
     </div>`; };
   const row=g=>`<div class="room rrow" data-room="${g.uuid}"><div class="head" data-select="${g.uuid}"><span class="dot"></span><span class="txt"><b>${esc(g.name)}</b>${badge(g)}</span></div></div>`;
+  if(tog&&many) tog.innerHTML=`<button class="rtog${open?" open":""}" data-roomtoggle="1" aria-expanded="${open}">All rooms<svg class="ic" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>`;
   list.innerHTML=(act?card(act):"")+(open||!act?others.map(row).join(""):"");
   $$("#roomList [data-roomvol]").forEach(el=>setSlider(el,+el.value));
 }
